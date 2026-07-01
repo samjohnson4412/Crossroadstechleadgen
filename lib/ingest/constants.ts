@@ -1,0 +1,45 @@
+export const TAMPA_BAY_CITIES = [
+  'TAMPA', 'BRANDON', 'RIVERVIEW', 'VALRICO', 'PLANT CITY',
+  'SEFFNER', 'DOVER', 'GIBSONTON', 'APOLLO BEACH', 'RUSKIN',
+  'SUN CITY CENTER', 'WIMAUMA', 'LITHIA', 'TEMPLE TERRACE',
+  'TOWN N COUNTRY', 'WESTCHASE', 'LUTZ', 'ODESSA', 'LAND O LAKES',
+  'CLEARWATER', 'LARGO', 'ST PETE', 'ST PETERSBURG', 'SAINT PETERSBURG',
+  'PINELLAS PARK', 'DUNEDIN', 'SAFETY HARBOR', 'TARPON SPRINGS',
+  'PALM HARBOR', 'OLDSMAR', 'SEMINOLE', 'TREASURE ISLAND',
+  'ST PETE BEACH', 'KENNETH CITY', 'HOLIDAY',
+  'NEW PORT RICHEY', 'PORT RICHEY', 'ZEPHYRHILLS', 'DADE CITY',
+  'WESLEY CHAPEL', 'SPRING HILL', 'BROOKSVILLE',
+  'BRADENTON', 'PALMETTO', 'ELLENTON', 'PARRISH',
+  'SARASOTA', 'VENICE', 'OSPREY',
+  'LAKELAND', 'WINTER HAVEN', 'BARTOW', 'AUBURNDALE',
+]
+
+export const CITY_TO_COUNTY: Record<string, string> = {
+  TAMPA: 'Hillsborough', BRANDON: 'Hillsborough', RIVERVIEW: 'Hillsborough',
+  VALRICO: 'Hillsborough', 'PLANT CITY': 'Hillsborough', SEFFNER: 'Hillsborough',
+  DOVER: 'Hillsborough', GIBSONTON: 'Hillsborough', 'APOLLO BEACH': 'Hillsborough',
+  RUSKIN: 'Hillsborough', 'SUN CITY CENTER': 'Hillsborough', WIMAUMA: 'Hillsborough',
+  LITHIA: 'Hillsborough', 'TEMPLE TERRACE': 'Hillsborough', LUTZ: 'Hillsborough',
+  ODESSA: 'Hillsborough', WESTCHASE: 'Hillsborough',
+  CLEARWATER: 'Pinellas', LARGO: 'Pinellas', 'ST PETE': 'Pinellas',
+  'ST PETERSBURG': 'Pinellas', 'SAINT PETERSBURG': 'Pinellas',
+  'PINELLAS PARK': 'Pinellas', DUNEDIN: 'Pinellas', 'SAFETY HARBOR': 'Pinellas',
+  'TARPON SPRINGS': 'Pinellas', 'PALM HARBOR': 'Pinellas', OLDSMAR: 'Pinellas',
+  SEMINOLE: 'Pinellas', 'TREASURE ISLAND': 'Pinellas', 'ST PETE BEACH': 'Pinellas',
+  'KENNETH CITY': 'Pinellas', HOLIDAY: 'Pinellas',
+  'NEW PORT RICHEY': 'Pasco', 'PORT RICHEY': 'Pasco', ZEPHYRHILLS: 'Pasco',
+  'DADE CITY': 'Pasco', 'WESLEY CHAPEL': 'Pasco', 'LAND O LAKES': 'Pasco',
+  'SPRING HILL': 'Hernando', BROOKSVILLE: 'Hernando',
+  BRADENTON: 'Manatee', PALMETTO: 'Manatee', ELLENTON: 'Manatee', PARRISH: 'Manatee',
+  SARASOTA: 'Sarasota', VENICE: 'Sarasota', OSPREY: 'Sarasota',
+  LAKELAND: 'Polk', 'WINTER HAVEN': 'Polk', BARTOW: 'Polk', AUBURNDALE: 'Polk',
+}
+
+export const SUNBIZ_SEARCH_CITIES = [
+  'TAMPA', 'BRANDON', 'RIVERVIEW', 'PLANT CITY',
+  'CLEARWATER', 'LARGO', 'ST PETERSBURG', 'DUNEDIN', 'PALM HARBOR',
+  'TARPON SPRINGS', 'PINELLAS PARK', 'SEMINOLE',
+  'NEW PORT RICHEY', 'WESLEY CHAPEL', 'ZEPHYRHILLS', 'LAND O LAKES',
+  'SPRING HILL', 'BRADENTON', 'SARASOTA',
+  'LAKELAND',
+]

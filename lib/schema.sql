@@ -44,6 +44,20 @@ create table if not exists outreach_log (
   created_at timestamptz not null default now()
 );
 
+create table if not exists ingest_logs (
+  id uuid primary key default gen_random_uuid(),
+  source text not null,
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  status text not null default 'running'
+    check (status in ('running', 'success', 'error')),
+  records_found int not null default 0,
+  records_inserted int not null default 0,
+  records_skipped int not null default 0,
+  error_message text,
+  details jsonb
+);
+
 create or replace function update_updated_at()
 returns trigger as $$
 begin
@@ -62,3 +76,5 @@ create index if not exists businesses_county_idx on businesses(county);
 create index if not exists businesses_created_at_idx on businesses(created_at desc);
 create index if not exists outreach_business_id_idx on outreach_log(business_id);
 create index if not exists outreach_next_follow_up_idx on outreach_log(next_follow_up);
+create index if not exists ingest_logs_source_idx on ingest_logs(source);
+create index if not exists ingest_logs_started_at_idx on ingest_logs(started_at desc);
