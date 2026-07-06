@@ -1,18 +1,23 @@
 // Hillsborough County Building Permit scraper
-// Public data portal: https://www.hillsboroughcounty.org/en/residents/property-owners-and-renters/building-services
 // HillsGovHub (Accela Citizen Access): https://aca-prod.accela.com/HCFL/
+//
+// Accela is an ASP.NET WebForms app: the search must be submitted as a
+// postback carrying every form field the page rendered, plus __EVENTTARGET
+// pointing at the search button. We read the real form off the page rather
+// than hardcoding field names, so tenant-specific naming doesn't break us.
 
-import { parse } from 'node-html-parser'
+import { parse, HTMLElement } from 'node-html-parser'
 import { createClient } from '@supabase/supabase-js'
 import { CITY_TO_COUNTY } from './constants'
 
 // HillsGovHub — Hillsborough County's Accela tenant is "HCFL"
 const HILLSBOROUGH_BASE = 'https://aca-prod.accela.com/HCFL'
 
-// Commercial permit type codes that signal low-voltage / networking / security work
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
+// Commercial permit keywords that signal low-voltage / networking / security work
 const COMMERCIAL_TYPES = [
-  'COMMERCIAL NEW', 'COMMERCIAL ADDITION', 'COMMERCIAL ALTERATION',
-  'TENANT IMPROVEMENT', 'CHANGE OF OCCUPANCY', 'COMMERCIAL REMODEL',
+  'COMMERCIAL', 'TENANT IMPROVEMENT', 'CHANGE OF OCCUPANCY', 'NEW CONSTRUCTION',
 ]
 
 export interface PermitRecord {
@@ -34,17 +39,13 @@ export async function fetchHillsboroughPermits(daysBack = 30): Promise<{ permits
   const fmtDate = (d: Date) =>
     `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`
 
-  // Hillsborough's Accela public search for commercial permits
   const searchUrl = `${HILLSBOROUGH_BASE}/Cap/CapHome.aspx?module=Building&TabName=Building`
 
-  // The Accela system uses ASP.NET WebForms with __VIEWSTATE
-  // First GET the form to get the VIEWSTATE token
   const getRes = await fetch(searchUrl, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+    headers: { 'User-Agent': BROWSER_UA },
   })
   if (!getRes.ok) throw new Error(`Hillsborough portal returned ${getRes.status}`)
 
-  // Carry the ASP.NET session cookie into the search POST
   const cookies = (getRes.headers.get('set-cookie') ?? '')
     .split(/,(?=[^;]+=[^;]+)/)
     .map(c => c.trim().split(';')[0])
@@ -53,27 +54,50 @@ export async function fetchHillsboroughPermits(daysBack = 30): Promise<{ permits
   const html = await getRes.text()
   const root = parse(html)
 
-  const viewState = root.querySelector('#__VIEWSTATE')?.getAttribute('value') ?? ''
-  const eventValidation = root.querySelector('#__EVENTVALIDATION')?.getAttribute('value') ?? ''
+  // Collect every form field the page actually rendered
+  const formData = new URLSearchParams()
+  for (const input of root.querySelectorAll('input[name]')) {
+    const name = input.getAttribute('name')!
+    const type = (input.getAttribute('type') ?? 'text').toLowerCase()
+    if (type === 'submit' || type === 'button' || type === 'image') continue
+    if ((type === 'checkbox' || type === 'radio') && input.getAttribute('checked') == null) continue
+    formData.set(name, input.getAttribute('value') ?? '')
+  }
+  for (const select of root.querySelectorAll('select[name]')) {
+    const name = select.getAttribute('name')!
+    const selected = select.querySelector('option[selected]') ?? select.querySelector('option')
+    formData.set(name, selected?.getAttribute('value') ?? '')
+  }
 
-  diag.push(`[diag] GET ${getRes.status}: ${html.length} chars, viewstate=${viewState.length}ch, eventValidation=${eventValidation.length}ch, cookies=${cookies ? 'yes' : 'none'}`)
+  // Locate the real date fields and search trigger
+  const fieldNames = [...formData.keys()]
+  const dateFrom = fieldNames.find(n => /datefrom/i.test(n))
+  const dateTo = fieldNames.find(n => /dateto/i.test(n))
+  const dateKind = fieldNames.find(n => /datesearchfield|searchdatetype/i.test(n))
+  const searchTarget =
+    html.match(/__doPostBack\('([^']*btnNewSearch[^']*)'/i)?.[1] ??
+    html.match(/__doPostBack\('([^']*btnSearch[^']*)'/i)?.[1] ??
+    null
 
-  // POST the search form
-  const formData = new URLSearchParams({
-    '__VIEWSTATE': viewState,
-    '__EVENTVALIDATION': eventValidation,
-    'ctl00$PlaceHolderMain$generalSearchForm$txtGSPermitType': 'COMMERCIAL',
-    'ctl00$PlaceHolderMain$generalSearchForm$drpGSDateSearchField': 'IssuedDate',
-    'ctl00$PlaceHolderMain$generalSearchForm$txtGSDateFrom': fmtDate(begin),
-    'ctl00$PlaceHolderMain$generalSearchForm$txtGSDateTo': fmtDate(end),
-    'ctl00$PlaceHolderMain$generalSearchForm$btnSearch': 'Search',
-  })
+  if (dateFrom) formData.set(dateFrom, fmtDate(begin))
+  if (dateTo) formData.set(dateTo, fmtDate(end))
+  if (searchTarget) {
+    formData.set('__EVENTTARGET', searchTarget)
+    formData.set('__EVENTARGUMENT', '')
+  }
+
+  const dateKindSelect = dateKind ? root.querySelector(`select[name="${dateKind}"]`) : null
+  const dateKindOptions = dateKindSelect
+    ? dateKindSelect.querySelectorAll('option').map(o => `${o.getAttribute('value')}=${o.text.trim()}`).slice(0, 8).join(' | ')
+    : 'n/a'
+
+  diag.push(`[diag] form: ${fieldNames.length} fields | dateFrom=${dateFrom ?? 'NOT FOUND'} | dateTo=${dateTo ?? 'NOT FOUND'} | searchBtn=${searchTarget ?? 'NOT FOUND'} | dateKind=${dateKind ?? 'none'} opts: ${dateKindOptions}`)
 
   const postRes = await fetch(searchUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'User-Agent': BROWSER_UA,
       'Referer': searchUrl,
       ...(cookies ? { 'Cookie': cookies } : {}),
     },
@@ -82,44 +106,63 @@ export async function fetchHillsboroughPermits(daysBack = 30): Promise<{ permits
 
   if (!postRes.ok) throw new Error(`Hillsborough search POST returned ${postRes.status}`)
   const resultsHtml = await postRes.text()
-
   const resultRoot = parse(resultsHtml)
-  const gridRows = resultRoot.querySelectorAll('table.aca_grid_table tbody tr').length
-  const permitRows = resultRoot.querySelectorAll('#tbl_permit tbody tr').length
-  const anyTables = resultRoot.querySelectorAll('table').length
-  const title = resultRoot.querySelector('title')?.text.trim() ?? '?'
-  diag.push(`[diag] POST ${postRes.status}: ${resultsHtml.length} chars, title="${title.slice(0, 60)}", tables=${anyTables}, grid rows=${gridRows}, permit rows=${permitRows}`)
 
-  return { permits: parsePermitResults(resultsHtml), diag }
+  const { permits, gridDiag } = parsePermitResults(resultRoot)
+  diag.push(`[diag] POST ${postRes.status}: ${resultsHtml.length} chars | ${gridDiag}`)
+
+  return { permits, diag }
 }
 
-function parsePermitResults(html: string): PermitRecord[] {
-  const root = parse(html)
-  const rows = root.querySelectorAll('table.aca_grid_table tbody tr, #tbl_permit tbody tr')
+// Find the results grid by its headers instead of guessing table ids/positions
+function parsePermitResults(root: HTMLElement): { permits: PermitRecord[]; gridDiag: string } {
   const permits: PermitRecord[] = []
+  const candidates: string[] = []
 
-  for (const row of rows) {
-    const cells = row.querySelectorAll('td')
-    if (cells.length < 4) continue
+  for (const table of root.querySelectorAll('table')) {
+    const headerCells = table.querySelectorAll('th, tr:first-child td').map(c => c.text.trim().toLowerCase())
+    if (headerCells.length < 3) continue
 
-    const permitNumber = cells[0]?.text.trim()
-    const permitType = cells[1]?.text.trim()
-    const address = cells[2]?.text.trim()
-    const projectName = cells[3]?.text.trim() ?? ''
-    const issueDate = cells[4]?.text.trim() ?? ''
-    const description = cells[5]?.text.trim() ?? ''
+    const col = (patterns: RegExp[]) =>
+      headerCells.findIndex(h => patterns.some(p => p.test(h)))
 
-    if (!permitNumber || !address) continue
+    const numIdx = col([/record number/, /permit number/, /^record$/, /^permit$/])
+    const addrIdx = col([/address/])
+    if (numIdx === -1 || addrIdx === -1) continue
 
-    // Filter for commercial types only
-    const isCommercial = COMMERCIAL_TYPES.some(t =>
-      permitType.toUpperCase().includes(t) || description.toUpperCase().includes('COMMERCIAL')
-    )
-    if (!isCommercial) continue
+    const typeIdx = col([/record type/, /permit type/, /^type$/])
+    const dateIdx = col([/^date$/, /date opened/, /issued/, /file date/])
+    const descIdx = col([/description/, /project name/, /short notes/])
 
-    permits.push({ permitNumber, permitType, address, city: 'Tampa', projectName, issueDate, description })
+    const id = table.getAttribute('id') ?? '(no id)'
+    const rows = table.querySelectorAll('tr').slice(1)
+    candidates.push(`grid ${id}: ${rows.length} rows, headers=[${headerCells.slice(0, 8).join(', ')}]`)
+
+    for (const row of rows) {
+      const cells = row.querySelectorAll('td')
+      if (cells.length <= Math.max(numIdx, addrIdx)) continue
+      const permitNumber = cells[numIdx]?.text.trim()
+      const address = cells[addrIdx]?.text.trim().replace(/\s+/g, ' ')
+      if (!permitNumber || !address || permitNumber.length < 4) continue
+
+      const permitType = typeIdx >= 0 ? cells[typeIdx]?.text.trim() ?? '' : ''
+      const issueDate = dateIdx >= 0 ? cells[dateIdx]?.text.trim() ?? '' : ''
+      const description = descIdx >= 0 ? cells[descIdx]?.text.trim() ?? '' : ''
+
+      const isCommercial = COMMERCIAL_TYPES.some(t =>
+        permitType.toUpperCase().includes(t) || description.toUpperCase().includes(t)
+      )
+      if (!isCommercial) continue
+
+      permits.push({ permitNumber, permitType, address, city: 'Tampa', projectName: description, issueDate, description })
+    }
   }
-  return permits
+
+  const gridDiag = candidates.length
+    ? candidates.slice(0, 3).join(' || ')
+    : `no results grid found (tables=${root.querySelectorAll('table').length})`
+
+  return { permits, gridDiag }
 }
 
 export async function runPermitIngest(

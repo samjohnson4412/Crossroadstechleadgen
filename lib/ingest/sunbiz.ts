@@ -166,7 +166,9 @@ export async function runSunbizIngest(
   const errors: string[] = []
   let found = 0, inserted = 0, skipped = 0
 
-  const cityFilter = new Set(TAMPA_BAY_CITIES)
+  const cityFilter = new Set(TAMPA_BAY_CITIES.map(normalizeCity))
+  const countyByCity: Record<string, string> = {}
+  for (const [city, county] of Object.entries(CITY_TO_COUNTY)) countyByCity[normalizeCity(city)] = county
   const sftp = new SftpClient()
 
   try {
@@ -208,10 +210,10 @@ export async function runSunbizIngest(
         continue
       }
 
+      // No state filter: it's a Florida-only file and the state column is often blank
       const tampaBay = records.filter(r =>
         r.status === 'A' &&
-        r.state === 'FL' &&
-        cityFilter.has(r.city.toUpperCase())
+        cityFilter.has(normalizeCity(r.city))
       )
       found += tampaBay.length
 
@@ -228,7 +230,7 @@ export async function runSunbizIngest(
 
         if (existing && existing.length > 0) { skipped++; continue }
 
-        const county = CITY_TO_COUNTY[rec.city.toUpperCase()] ?? null
+        const county = countyByCity[normalizeCity(rec.city)] ?? null
 
         const { error } = await db.from('businesses').insert({
           company_name: rec.name,
@@ -257,4 +259,9 @@ export async function runSunbizIngest(
 
 function toTitleCase(s: string) {
   return s.split(' ').map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ')
+}
+
+// Files write cities like "ST. PETERSBURG" / "LAND O' LAKES" — normalize for matching
+export function normalizeCity(c: string): string {
+  return c.toUpperCase().replace(/[.'’]/g, '').replace(/\s+/g, ' ').trim()
 }
