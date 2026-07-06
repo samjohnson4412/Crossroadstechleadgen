@@ -79,7 +79,7 @@ function parseFileDate(raw: string): string {
   return `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4, 8)}`
 }
 
-function parseDailyFile(content: string): { records: DailyRecord[]; invalid: number; sample: string | null } {
+function parseDailyFile(content: string): { records: DailyRecord[]; lineCount: number; invalid: number; sample: string | null } {
   const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0)
   const records: DailyRecord[] = []
   let invalid = 0
@@ -103,7 +103,7 @@ function parseDailyFile(content: string): { records: DailyRecord[]; invalid: num
       fileDate: parseFileDate(field(line, 'fileDate')),
     })
   }
-  return { records, invalid, sample }
+  return { records, lineCount: lines.length, invalid, sample }
 }
 
 function dailyFileNames(daysBack: number): string[] {
@@ -189,6 +189,8 @@ export async function runSunbizIngest(
       .sort()
       .reverse() // newest first
 
+    errors.push(`[diag] dir=${located.dir} | ${located.files.length} daily files on server | ${matching.length} within ${daysBack}d | newest on server: ${located.files.sort().slice(-2).join(', ')}`)
+
     if (matching.length > MAX_FILES_PER_RUN) {
       errors.push(`${matching.length} daily files in range; processing the ${MAX_FILES_PER_RUN} most recent (run again with a smaller "days back" to backfill the rest)`)
       matching = matching.slice(0, MAX_FILES_PER_RUN)
@@ -199,7 +201,7 @@ export async function runSunbizIngest(
 
     for (const fileName of matching) {
       const buf = await sftp.get(`${located.dir}/${fileName}`) as Buffer
-      const { records, invalid, sample } = parseDailyFile(buf.toString('latin1'))
+      const { records, lineCount, invalid, sample } = parseDailyFile(buf.toString('latin1'))
 
       if (records.length === 0 && invalid > 0) {
         errors.push(`${fileName}: layout mismatch — ${invalid} unparseable lines. Sample: "${sample}"`)
@@ -212,6 +214,10 @@ export async function runSunbizIngest(
         cityFilter.has(r.city.toUpperCase())
       )
       found += tampaBay.length
+
+      const s = records[0]
+      errors.push(`[diag] ${fileName}: ${lineCount} lines, ${records.length} parsed, ${invalid} invalid, ${tampaBay.length} Tampa Bay` +
+        (s ? ` | first parsed: name="${s.name.slice(0, 40)}" status="${s.status}" city="${s.city}" state="${s.state}" zip="${s.zip}"` : ''))
 
       for (const rec of tampaBay) {
         const { data: existing } = await db

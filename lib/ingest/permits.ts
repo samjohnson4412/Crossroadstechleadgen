@@ -25,7 +25,8 @@ export interface PermitRecord {
   description: string
 }
 
-export async function fetchHillsboroughPermits(daysBack = 30): Promise<PermitRecord[]> {
+export async function fetchHillsboroughPermits(daysBack = 30): Promise<{ permits: PermitRecord[]; diag: string[] }> {
+  const diag: string[] = []
   const end = new Date()
   const begin = new Date()
   begin.setDate(begin.getDate() - daysBack)
@@ -55,6 +56,8 @@ export async function fetchHillsboroughPermits(daysBack = 30): Promise<PermitRec
   const viewState = root.querySelector('#__VIEWSTATE')?.getAttribute('value') ?? ''
   const eventValidation = root.querySelector('#__EVENTVALIDATION')?.getAttribute('value') ?? ''
 
+  diag.push(`[diag] GET ${getRes.status}: ${html.length} chars, viewstate=${viewState.length}ch, eventValidation=${eventValidation.length}ch, cookies=${cookies ? 'yes' : 'none'}`)
+
   // POST the search form
   const formData = new URLSearchParams({
     '__VIEWSTATE': viewState,
@@ -79,7 +82,15 @@ export async function fetchHillsboroughPermits(daysBack = 30): Promise<PermitRec
 
   if (!postRes.ok) throw new Error(`Hillsborough search POST returned ${postRes.status}`)
   const resultsHtml = await postRes.text()
-  return parsePermitResults(resultsHtml)
+
+  const resultRoot = parse(resultsHtml)
+  const gridRows = resultRoot.querySelectorAll('table.aca_grid_table tbody tr').length
+  const permitRows = resultRoot.querySelectorAll('#tbl_permit tbody tr').length
+  const anyTables = resultRoot.querySelectorAll('table').length
+  const title = resultRoot.querySelector('title')?.text.trim() ?? '?'
+  diag.push(`[diag] POST ${postRes.status}: ${resultsHtml.length} chars, title="${title.slice(0, 60)}", tables=${anyTables}, grid rows=${gridRows}, permit rows=${permitRows}`)
+
+  return { permits: parsePermitResults(resultsHtml), diag }
 }
 
 function parsePermitResults(html: string): PermitRecord[] {
@@ -121,7 +132,8 @@ export async function runPermitIngest(
   let found = 0, inserted = 0, skipped = 0
 
   try {
-    const permits = await fetchHillsboroughPermits(daysBack)
+    const { permits, diag } = await fetchHillsboroughPermits(daysBack)
+    errors.push(...diag)
     found = permits.length
 
     for (const permit of permits) {
