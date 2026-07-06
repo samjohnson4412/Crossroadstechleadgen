@@ -11,8 +11,25 @@ export type OutreachOutcome =
   | 'Email Sent'
   | 'Other'
 
-export type LeadSource = 'SOS Filing' | 'Building Permit' | 'FCC Lookup' | 'POTS Zone' | 'Referral' | 'Manual' | 'Other'
-export type PitchAngle = 'New Business Package' | 'POTS Replacement' | 'ISP Upgrade' | 'Camera / Surveillance' | 'Wi-Fi / Networking' | 'Microsoft 365' | 'Full MSA' | 'Multiple'
+export type LeadSource =
+  | 'SOS Filing'
+  | 'Building Permit'
+  | 'Business License'
+  | 'FCC Lookup'
+  | 'POTS Zone'
+  | 'Referral'
+  | 'Manual'
+  | 'Other'
+
+export type PitchAngle =
+  | 'New Business Package'
+  | 'POTS Replacement'
+  | 'ISP Upgrade'
+  | 'Camera / Surveillance'
+  | 'Wi-Fi / Networking'
+  | 'Microsoft 365'
+  | 'Full MSA'
+  | 'Multiple'
 
 export interface Business {
   id: string
@@ -24,15 +41,18 @@ export interface Business {
   county: string | null
   employee_count_estimate: string | null
   industry: string | null
+
   contact_name: string | null
   contact_title: string | null
   contact_phone: string | null
   contact_email: string | null
+
   current_isp: string | null
   internet_speed: string | null
   phone_system: PhoneSystem | null
   has_cameras: boolean | null
   has_managed_it: boolean | null
+
   lead_source: LeadSource | null
   pitch_angle: PitchAngle | null
   status: LeadStatus
@@ -40,6 +60,7 @@ export interface Business {
   assigned_to: string | null
   notes: string | null
   zoho_id: string | null
+
   created_at: string
   updated_at: string
 }
@@ -80,6 +101,22 @@ export const PRIORITY_COLORS: Record<LeadPriority, string> = {
   high: 'bg-red-100 text-red-700',
 }
 
-export const STATUSES: LeadStatus[] = ['cold','researched','contacted','engaged','qualified','transferred']
+export const STATUSES: LeadStatus[] = [
+  'cold',
+  'researched',
+  'contacted',
+  'engaged',
+  'qualified',
+  'transferred',
+]
 
-export const COUNTIES = ['Hillsborough','Pinellas','Pasco','Hernando','Manatee','Polk','Sarasota','Other']
+export const COUNTIES = [
+  'Hillsborough',
+  'Pinellas',
+  'Pasco',
+  'Hernando',
+  'Manatee',
+  'Polk',
+  'Sarasota',
+  'Other',
+]

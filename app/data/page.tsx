@@ -37,6 +37,16 @@ const SOURCES = [
     color: 'var(--navy)',
   },
   {
+    id: 'business_tax',
+    label: 'Tampa Business Licenses',
+    description: 'Pulls recently issued business tax receipts from the City of Tampa — businesses that just opened or moved. Prime prospects for internet, VoIP, cameras, and managed IT.',
+    icon: <Building2 size={20} />,
+    endpoint: '/api/ingest/businesstax',
+    defaultDays: 30,
+    pitch: 'New Business Package',
+    color: 'var(--cyan)',
+  },
+  {
     id: 'permits',
     label: 'Tampa Building Permits',
     description: 'Pulls commercial building permits from the City of Tampa open data portal. New construction and renovations signal immediate need for low-voltage, cameras, and networking.',
@@ -219,14 +229,14 @@ export default function DataPage() {
       "schedule": "0 8 * * 1"
     },
     {
-      "path": "/api/ingest/permits",
+      "path": "/api/ingest/businesstax",
       "schedule": "0 9 * * 1"
     }
   ]
 }`}
         </pre>
         <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-          This runs both sources every Monday morning at 8am and 9am. Vercel Cron is free on the Hobby plan (up to 2 cron jobs).
+          This runs Sunbiz and Business Licenses every Monday morning at 8am and 9am. Vercel Cron is free on the Hobby plan (up to 2 cron jobs).
         </p>
       </div>
 
@@ -301,4 +311,5 @@ function StatusIcon({ status }: { status: string }) {
 const SOURCE_LABELS: Record<string, string> = {
   sunbiz: 'Florida SOS — Sunbiz',
   building_permits: 'Tampa Building Permits',
+  business_tax: 'Tampa Business Licenses',
 }
