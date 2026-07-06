@@ -4,6 +4,17 @@ import { SUNBIZ_SEARCH_CITIES, CITY_TO_COUNTY } from './constants'
 
 const SUNBIZ_SEARCH = 'https://search.sunbiz.org/Inquiry/corporationsearch/GetList'
 
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Origin': 'https://search.sunbiz.org',
+  'Referer': 'https://search.sunbiz.org/Inquiry/corporationsearch/ByEntityName',
+  'Cache-Control': 'no-cache',
+  'Pragma': 'no-cache',
+}
+
 interface SunbizEntity {
   name: string
   docNumber: string
@@ -48,9 +59,8 @@ async function searchSunbiz(city: string, begin: string, end: string, skip = 0):
   const res = await fetch(SUNBIZ_SEARCH, {
     method: 'POST',
     headers: {
+      ...BROWSER_HEADERS,
       'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'Mozilla/5.0 (compatible; CrossroadsLeadGen/1.0)',
-      'Referer': 'https://search.sunbiz.org/Inquiry/corporationsearch/ByEntityName',
     },
     body,
   })
@@ -86,7 +96,7 @@ function parseSunbizResults(html: string): SunbizEntity[] {
 async function fetchSunbizDetail(url: string): Promise<SunbizDetail> {
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CrossroadsLeadGen/1.0)' },
+      headers: BROWSER_HEADERS,
     })
     if (!res.ok) return { principalAddress: null, principalCity: null, principalZip: null, registeredAgent: null }
     const html = await res.text()
@@ -139,7 +149,10 @@ export async function runSunbizIngest(
           .eq('company_name', entity.name)
           .limit(1)
 
-        if (existing && existing.length > 0) { skipped++; continue }
+        if (existing && existing.length > 0) {
+          skipped++
+          continue
+        }
 
         let detail: SunbizDetail = { principalAddress: null, principalCity: null, principalZip: null, registeredAgent: null }
         if (fetchDetails) {
@@ -164,8 +177,12 @@ export async function runSunbizIngest(
           notes: `SOS Filing: ${entity.docNumber} | Filed: ${entity.filingDate} | Type: ${entity.entityType}`,
         })
 
-        if (error) { errors.push(`${entity.name}: ${error.message}`); skipped++ }
-        else inserted++
+        if (error) {
+          errors.push(`${entity.name}: ${error.message}`)
+          skipped++
+        } else {
+          inserted++
+        }
       }
 
       await new Promise(r => setTimeout(r, 500))
