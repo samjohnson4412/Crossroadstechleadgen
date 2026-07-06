@@ -1,13 +1,13 @@
 // Hillsborough County Building Permit scraper
 // Public data portal: https://www.hillsboroughcounty.org/en/residents/property-owners-and-renters/building-services
+// HillsGovHub (Accela Citizen Access): https://aca-prod.accela.com/HCFL/
 
 import { parse } from 'node-html-parser'
 import { createClient } from '@supabase/supabase-js'
 import { CITY_TO_COUNTY } from './constants'
 
-const HILLSBOROUGH_BASE = 'https://aca-prod.accela.com/HILLSBOROUGH'
-
-const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+// HillsGovHub — Hillsborough County's Accela tenant is "HCFL"
+const HILLSBOROUGH_BASE = 'https://aca-prod.accela.com/HCFL'
 
 // Commercial permit type codes that signal low-voltage / networking / security work
 const COMMERCIAL_TYPES = [
@@ -33,17 +33,17 @@ export async function fetchHillsboroughPermits(daysBack = 30): Promise<PermitRec
   const fmtDate = (d: Date) =>
     `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`
 
+  // Hillsborough's Accela public search for commercial permits
   const searchUrl = `${HILLSBOROUGH_BASE}/Cap/CapHome.aspx?module=Building&TabName=Building`
 
+  // The Accela system uses ASP.NET WebForms with __VIEWSTATE
+  // First GET the form to get the VIEWSTATE token
   const getRes = await fetch(searchUrl, {
-    headers: {
-      'User-Agent': BROWSER_UA,
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
   })
   if (!getRes.ok) throw new Error(`Hillsborough portal returned ${getRes.status}`)
 
+  // Carry the ASP.NET session cookie into the search POST
   const cookies = (getRes.headers.get('set-cookie') ?? '')
     .split(/,(?=[^;]+=[^;]+)/)
     .map(c => c.trim().split(';')[0])
@@ -55,6 +55,7 @@ export async function fetchHillsboroughPermits(daysBack = 30): Promise<PermitRec
   const viewState = root.querySelector('#__VIEWSTATE')?.getAttribute('value') ?? ''
   const eventValidation = root.querySelector('#__EVENTVALIDATION')?.getAttribute('value') ?? ''
 
+  // POST the search form
   const formData = new URLSearchParams({
     '__VIEWSTATE': viewState,
     '__EVENTVALIDATION': eventValidation,
@@ -69,9 +70,9 @@ export async function fetchHillsboroughPermits(daysBack = 30): Promise<PermitRec
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': BROWSER_UA,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       'Referer': searchUrl,
-      'Cookie': cookies,
+      ...(cookies ? { 'Cookie': cookies } : {}),
     },
     body: formData.toString(),
   })
@@ -99,6 +100,7 @@ function parsePermitResults(html: string): PermitRecord[] {
 
     if (!permitNumber || !address) continue
 
+    // Filter for commercial types only
     const isCommercial = COMMERCIAL_TYPES.some(t =>
       permitType.toUpperCase().includes(t) || description.toUpperCase().includes('COMMERCIAL')
     )
@@ -123,6 +125,7 @@ export async function runPermitIngest(
     found = permits.length
 
     for (const permit of permits) {
+      // Check for duplicates by address
       const { data: existing } = await db
         .from('businesses')
         .select('id')

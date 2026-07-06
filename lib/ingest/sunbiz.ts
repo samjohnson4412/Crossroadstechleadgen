@@ -1,205 +1,249 @@
-import { parse } from 'node-html-parser'
+// Florida Division of Corporations — official daily data files.
+//
+// Sunbiz blocks web scraping from datacenter IPs, so instead we pull the
+// state's official daily filing files from their public SFTP server.
+// This is the sanctioned bulk-data route, documented at:
+//   https://dos.fl.gov/sunbiz/other-services/data-downloads/daily-data/
+// Credentials below are the public ones published on that page.
+//
+// Files are fixed-width ASCII (1440-char records), named CCYYMMDDc.txt,
+// one file per business day, containing that day's corporate filings.
+
+import SftpClient from 'ssh2-sftp-client'
 import { createClient } from '@supabase/supabase-js'
-import { SUNBIZ_SEARCH_CITIES, CITY_TO_COUNTY } from './constants'
+import { TAMPA_BAY_CITIES, CITY_TO_COUNTY } from './constants'
 
-const SUNBIZ_SEARCH = 'https://search.sunbiz.org/Inquiry/corporationsearch/GetList'
+const SFTP_HOST = process.env.SUNBIZ_SFTP_HOST ?? 'sftp.floridados.gov'
+const SFTP_USER = process.env.SUNBIZ_SFTP_USER ?? 'Public'
+const SFTP_PASS = process.env.SUNBIZ_SFTP_PASS ?? 'PubAccess1845!'
 
-const BROWSER_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Accept-Encoding': 'gzip, deflate, br',
-  'Origin': 'https://search.sunbiz.org',
-  'Referer': 'https://search.sunbiz.org/Inquiry/corporationsearch/ByEntityName',
-  'Cache-Control': 'no-cache',
-  'Pragma': 'no-cache',
-}
+// Directories where the daily corporate files may live (varies by server layout)
+const CANDIDATE_DIRS = ['/Public/doc/cor', '/doc/cor', '/cor', '/Public/doc/Cor', '/Public/cor']
 
-interface SunbizEntity {
-  name: string
+// Max daily files per run — keeps us inside Vercel's 60s function limit
+const MAX_FILES_PER_RUN = 5
+
+// Fixed-width layout from the FL DOS "Corporate File Definitions" spec.
+// Positions are 0-indexed [start, end) for String.slice.
+// If the state ever shifts this layout, the validation gate below will
+// catch it and surface a raw sample line in the run log for recalibration.
+const LAYOUT = {
+  docNumber: [0, 12],
+  name: [12, 204],
+  status: [204, 205],
+  filingType: [205, 220],
+  princAdd1: [220, 262],
+  princAdd2: [262, 304],
+  princCity: [304, 332],
+  princState: [332, 334],
+  princZip: [334, 344],
+  princCountry: [344, 346],
+  fileDate: [472, 480],
+  fei: [480, 494],
+} as const
+
+interface DailyRecord {
   docNumber: string
+  name: string
   status: string
-  filingDate: string
-  entityType: string
-  detailUrl: string
+  filingType: string
+  address: string
+  city: string
+  state: string
+  zip: string
+  fileDate: string
 }
 
-interface SunbizDetail {
-  principalAddress: string | null
-  principalCity: string | null
-  principalZip: string | null
-  registeredAgent: string | null
+function field(line: string, key: keyof typeof LAYOUT): string {
+  const [start, end] = LAYOUT[key]
+  return line.slice(start, end).trim()
 }
 
-function dateRange(daysBack: number): { begin: string; end: string } {
-  const end = new Date()
-  const begin = new Date()
-  begin.setDate(begin.getDate() - daysBack)
-  const fmt = (d: Date) =>
-    `${String(d.getMonth() + 1).padStart(2, '0')}%2F${String(d.getDate()).padStart(2, '0')}%2F${d.getFullYear()}`
-  return { begin: fmt(begin), end: fmt(end) }
+function looksValid(line: string): boolean {
+  if (line.length < 494) return false
+  const doc = field(line, 'docNumber')
+  const state = field(line, 'princState')
+  // Doc numbers look like L24000123456 / P24000012345 / N12345 etc.
+  if (!/^[A-Z]{0,3}\d/.test(doc)) return false
+  if (state && !/^[A-Z]{2}$/.test(state)) return false
+  return true
 }
 
-async function getSunbizSession(): Promise<string> {
-  const res = await fetch('https://search.sunbiz.org/Inquiry/corporationsearch/ByEntityName', {
-    headers: BROWSER_HEADERS,
-  })
-  const raw = res.headers.get('set-cookie') ?? ''
-  return raw.split(/,(?=[^;]+=[^;]+)/).map(c => c.trim().split(';')[0]).join('; ')
-}
-
-async function searchSunbiz(city: string, begin: string, end: string, cookies: string, skip = 0): Promise<SunbizEntity[]> {
-  const body = [
-    `SearchTerm=`,
-    `SearchType=EntityName`,
-    `SearchStatus=Active`,
-    `SearchMainType=AllEntityTypes`,
-    `SearchSubType=AllEntitySubTypes`,
-    `SearchCitizenship=AllCitizenship`,
-    `SearchDateTimeRange=FilingDate`,
-    `SearchDateBegin=${begin}`,
-    `SearchDateEnd=${end}`,
-    `SearchCity=${encodeURIComponent(city)}`,
-    `skip=${skip}`,
-    `take=100`,
-  ].join('&')
-
-  const res = await fetch(SUNBIZ_SEARCH, {
-    method: 'POST',
-    headers: {
-      ...BROWSER_HEADERS,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      ...(cookies ? { 'Cookie': cookies } : {}),
-    },
-    body,
-  })
-
-  if (!res.ok) throw new Error(`Sunbiz returned ${res.status} for city ${city}`)
-  const html = await res.text()
-  return parseSunbizResults(html)
-}
-
-function parseSunbizResults(html: string): SunbizEntity[] {
-  const root = parse(html)
-  const rows = root.querySelectorAll('table.result-list tbody tr')
-  const entities: SunbizEntity[] = []
-
-  for (const row of rows) {
-    const cells = row.querySelectorAll('td')
-    if (cells.length < 4) continue
-    const link = cells[0].querySelector('a')
-    if (!link) continue
-
-    entities.push({
-      name: link.text.trim(),
-      detailUrl: `https://search.sunbiz.org${link.getAttribute('href') ?? ''}`,
-      docNumber: cells[1].text.trim(),
-      status: cells[2].text.trim(),
-      filingDate: cells[3].text.trim(),
-      entityType: cells[4]?.text.trim() ?? '',
-    })
+function parseFileDate(raw: string): string {
+  if (!/^\d{8}$/.test(raw)) return raw
+  // Auto-detect CCYYMMDD vs MMDDCCYY
+  const asYearFirst = Number(raw.slice(0, 4))
+  if (asYearFirst >= 1900 && asYearFirst <= 2100) {
+    return `${raw.slice(4, 6)}/${raw.slice(6, 8)}/${raw.slice(0, 4)}`
   }
-  return entities
+  return `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4, 8)}`
 }
 
-async function fetchSunbizDetail(url: string): Promise<SunbizDetail> {
-  try {
-    const res = await fetch(url, {
-      headers: BROWSER_HEADERS,
-    })
-    if (!res.ok) return { principalAddress: null, principalCity: null, principalZip: null, registeredAgent: null }
-    const html = await res.text()
-    const root = parse(html)
+function parseDailyFile(content: string): { records: DailyRecord[]; invalid: number; sample: string | null } {
+  const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0)
+  const records: DailyRecord[] = []
+  let invalid = 0
+  let sample: string | null = null
 
-    let principalAddress: string | null = null
-    let principalCity: string | null = null
-    let principalZip: string | null = null
-    let registeredAgent: string | null = null
-
-    const spans = root.querySelectorAll('span')
-    for (let i = 0; i < spans.length; i++) {
-      const text = spans[i].text.trim()
-      if (text === 'Principal Address') {
-        principalAddress = spans[i + 1]?.text.trim() ?? null
-        principalCity = spans[i + 2]?.text.trim() ?? null
-        principalZip = spans[i + 3]?.text.trim() ?? null
-      }
-      if (text === 'Registered Agent Name') {
-        registeredAgent = spans[i + 1]?.text.trim() ?? null
-      }
+  for (const line of lines) {
+    if (!looksValid(line)) {
+      invalid++
+      if (!sample) sample = line.slice(0, 360)
+      continue
     }
-
-    return { principalAddress, principalCity, principalZip, registeredAgent }
-  } catch {
-    return { principalAddress: null, principalCity: null, principalZip: null, registeredAgent: null }
+    records.push({
+      docNumber: field(line, 'docNumber'),
+      name: field(line, 'name'),
+      status: field(line, 'status'),
+      filingType: field(line, 'filingType'),
+      address: [field(line, 'princAdd1'), field(line, 'princAdd2')].filter(Boolean).join(', '),
+      city: field(line, 'princCity'),
+      state: field(line, 'princState'),
+      zip: field(line, 'princZip').slice(0, 5),
+      fileDate: parseFileDate(field(line, 'fileDate')),
+    })
   }
+  return { records, invalid, sample }
+}
+
+function dailyFileNames(daysBack: number): string[] {
+  const names: string[] = []
+  const d = new Date()
+  for (let i = 0; i <= daysBack; i++) {
+    const day = d.getDay()
+    // Files are only generated on business days
+    if (day !== 0 && day !== 6) {
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      names.push(`${yyyy}${mm}${dd}c.txt`)
+    }
+    d.setDate(d.getDate() - 1)
+  }
+  return names
+}
+
+async function findDailyDir(sftp: SftpClient): Promise<{ dir: string; files: string[] } | null> {
+  for (const dir of CANDIDATE_DIRS) {
+    try {
+      const listing = await sftp.list(dir)
+      const files = listing.filter(f => /^\d{8}c\.txt$/i.test(f.name)).map(f => f.name)
+      if (files.length > 0) return { dir, files }
+    } catch {
+      // Directory doesn't exist on this layout — try next
+    }
+  }
+  // Last resort: walk the root one level deep looking for daily cor files
+  try {
+    const root = await sftp.list('/')
+    for (const entry of root) {
+      if (entry.type !== 'd') continue
+      const dir = `/${entry.name}`
+      try {
+        const listing = await sftp.list(dir)
+        const files = listing.filter(f => /^\d{8}c\.txt$/i.test(f.name)).map(f => f.name)
+        if (files.length > 0) return { dir, files }
+        // One more level (e.g. /Public/doc)
+        for (const sub of listing.filter(f => f.type === 'd')) {
+          const subdir = `${dir}/${sub.name}`
+          const subListing = await sftp.list(subdir)
+          const subFiles = subListing.filter(f => /^\d{8}c\.txt$/i.test(f.name)).map(f => f.name)
+          if (subFiles.length > 0) return { dir: subdir, files: subFiles }
+        }
+      } catch { /* skip unreadable dirs */ }
+    }
+  } catch { /* fall through */ }
+  return null
 }
 
 export async function runSunbizIngest(
   supabaseUrl: string,
   supabaseKey: string,
   daysBack = 30,
-  fetchDetails = false
+  _fetchDetails = false // kept for API compatibility; not used by the SFTP route
 ): Promise<{ found: number; inserted: number; skipped: number; errors: string[] }> {
   const db = createClient(supabaseUrl, supabaseKey)
-  const { begin, end } = dateRange(daysBack)
   const errors: string[] = []
   let found = 0, inserted = 0, skipped = 0
 
-  const cookies = await getSunbizSession().catch(() => '')
+  const cityFilter = new Set(TAMPA_BAY_CITIES)
+  const sftp = new SftpClient()
 
-  for (const city of SUNBIZ_SEARCH_CITIES) {
-    try {
-      const entities = await searchSunbiz(city, begin, end, cookies)
-      found += entities.length
+  try {
+    await sftp.connect({
+      host: SFTP_HOST,
+      port: 22,
+      username: SFTP_USER,
+      password: SFTP_PASS,
+      readyTimeout: 15000,
+    })
 
-      for (const entity of entities) {
+    const located = await findDailyDir(sftp)
+    if (!located) {
+      throw new Error('Could not locate daily corporate files on the Sunbiz SFTP server. Directory layout may have changed.')
+    }
+
+    const wanted = new Set(dailyFileNames(daysBack).map(n => n.toLowerCase()))
+    let matching = located.files
+      .filter(f => wanted.has(f.toLowerCase()))
+      .sort()
+      .reverse() // newest first
+
+    if (matching.length > MAX_FILES_PER_RUN) {
+      errors.push(`${matching.length} daily files in range; processing the ${MAX_FILES_PER_RUN} most recent (run again with a smaller "days back" to backfill the rest)`)
+      matching = matching.slice(0, MAX_FILES_PER_RUN)
+    }
+    if (matching.length === 0) {
+      errors.push(`No daily files found in the last ${daysBack} days (dir: ${located.dir}). Newest available: ${located.files.sort().slice(-3).join(', ')}`)
+    }
+
+    for (const fileName of matching) {
+      const buf = await sftp.get(`${located.dir}/${fileName}`) as Buffer
+      const { records, invalid, sample } = parseDailyFile(buf.toString('latin1'))
+
+      if (records.length === 0 && invalid > 0) {
+        errors.push(`${fileName}: layout mismatch — ${invalid} unparseable lines. Sample: "${sample}"`)
+        continue
+      }
+
+      const tampaBay = records.filter(r =>
+        r.status === 'A' &&
+        r.state === 'FL' &&
+        cityFilter.has(r.city.toUpperCase())
+      )
+      found += tampaBay.length
+
+      for (const rec of tampaBay) {
         const { data: existing } = await db
           .from('businesses')
           .select('id')
-          .eq('company_name', entity.name)
+          .eq('company_name', rec.name)
           .limit(1)
 
-        if (existing && existing.length > 0) {
-          skipped++
-          continue
-        }
+        if (existing && existing.length > 0) { skipped++; continue }
 
-        let detail: SunbizDetail = { principalAddress: null, principalCity: null, principalZip: null, registeredAgent: null }
-        if (fetchDetails) {
-          detail = await fetchSunbizDetail(entity.detailUrl)
-          await new Promise(r => setTimeout(r, 200))
-        }
-
-        const cityKey = (detail.principalCity ?? city).toUpperCase()
-        const county = CITY_TO_COUNTY[cityKey] ?? CITY_TO_COUNTY[city] ?? null
+        const county = CITY_TO_COUNTY[rec.city.toUpperCase()] ?? null
 
         const { error } = await db.from('businesses').insert({
-          company_name: entity.name,
-          address: detail.principalAddress,
-          city: detail.principalCity ?? toTitleCase(city),
+          company_name: rec.name,
+          address: rec.address || null,
+          city: toTitleCase(rec.city),
           state: 'FL',
-          zip: detail.principalZip,
+          zip: rec.zip || null,
           county,
           lead_source: 'SOS Filing',
           pitch_angle: 'New Business Package',
           status: 'cold',
           priority: 'medium',
-          notes: `SOS Filing: ${entity.docNumber} | Filed: ${entity.filingDate} | Type: ${entity.entityType}`,
+          notes: `SOS Filing: ${rec.docNumber} | Filed: ${rec.fileDate} | Type: ${rec.filingType}`,
         })
 
-        if (error) {
-          errors.push(`${entity.name}: ${error.message}`)
-          skipped++
-        } else {
-          inserted++
-        }
+        if (error) { errors.push(`${rec.name}: ${error.message}`); skipped++ }
+        else inserted++
       }
-
-      await new Promise(r => setTimeout(r, 500))
-    } catch (err) {
-      errors.push(`City ${city}: ${err instanceof Error ? err.message : String(err)}`)
     }
+  } finally {
+    await sftp.end().catch(() => {})
   }
 
   return { found, inserted, skipped, errors }

@@ -1,143 +1,87 @@
-// FCC National Broadband Map API
-// Docs: https://broadbandmap.fcc.gov/home/data
+// Address verification + FCC broadband map jump-off.
+//
+// The FCC's per-address availability API is not publicly documented (the
+// official BDC API is bulk-download only and needs an account token), so
+// instead we use two documented, no-auth federal APIs:
+//   1. Census Bureau geocoder — verifies/normalizes the address, returns lat/lon
+//   2. FCC Area API (geo.fcc.gov) — county + census block for that point
+// and hand the user a direct link into the FCC National Broadband Map to
+// read the provider list there.
 
-const FCC_API = 'https://broadbandmap.fcc.gov/api/public/map'
+const CENSUS_GEOCODER = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress'
+const FCC_AREA_API = 'https://geo.fcc.gov/api/census/area'
 
-export interface FccLocation {
-  location_id: string
-  address: string
-  city: string
-  state: string
-  zip: string
-  latitude: number
-  longitude: number
-}
-
-export interface FccProvider {
-  provider_id: string
-  brand_name: string
-  technology: string
-  max_download_speed: number
-  max_upload_speed: number
-  low_latency: boolean
-}
-
-export interface FccCoverageResult {
-  location: FccLocation | null
-  providers: FccProvider[]
-  hasHighSpeed: boolean
-  underserved: boolean
-  providerCount: number
-  fastestDownload: number
+export interface FccLookupResult {
+  matched: boolean
+  matchedAddress: string | null
+  county: string | null
+  lat: number | null
+  lon: number | null
+  mapUrl: string | null
   summary: string
 }
 
-export async function lookupAddressCoverage(
+interface CensusMatch {
+  matchedAddress: string
+  coordinates: { x: number; y: number }
+}
+
+export async function lookupAddress(
   street: string,
   city: string,
   state = 'FL',
   zip?: string
-): Promise<FccCoverageResult> {
-  const locationParams = new URLSearchParams({
-    street_address: street,
-    city,
-    state,
-    zip: zip ?? '',
-    unit: '',
-    limit: '1',
-    offset: '0',
-    username: 'crossroads_leadgen',
+): Promise<FccLookupResult> {
+  const oneLine = [street, city, state, zip].filter(Boolean).join(', ')
+  const params = new URLSearchParams({
+    address: oneLine,
+    benchmark: 'Public_AR_Current',
+    format: 'json',
   })
 
-  const locationRes = await fetch(`${FCC_API}/location/search?${locationParams}`, {
-    headers: {
-      'Accept': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Referer': 'https://broadbandmap.fcc.gov/',
-    },
+  const res = await fetch(`${CENSUS_GEOCODER}?${params}`, {
+    headers: { 'Accept': 'application/json' },
   })
+  if (!res.ok) throw new Error(`Census geocoder returned ${res.status}`)
 
-  if (!locationRes.ok) {
-    throw new Error(`FCC location lookup failed: ${locationRes.status}`)
-  }
+  const data = await res.json()
+  const matches: CensusMatch[] = data?.result?.addressMatches ?? []
 
-  const locationData = await locationRes.json()
-  const locations: FccLocation[] = locationData?.results ?? []
-
-  if (!locations.length) {
+  if (!matches.length) {
     return {
-      location: null,
-      providers: [],
-      hasHighSpeed: false,
-      underserved: true,
-      providerCount: 0,
-      fastestDownload: 0,
-      summary: 'Address not found in FCC database',
+      matched: false,
+      matchedAddress: null,
+      county: null,
+      lat: null,
+      lon: null,
+      mapUrl: null,
+      summary: `No match for "${oneLine}" — check the street address and ZIP`,
     }
   }
 
-  const location = locations[0]
+  const match = matches[0]
+  const lat = match.coordinates.y
+  const lon = match.coordinates.x
 
-  const availParams = new URLSearchParams({
-    location_id: location.location_id,
-    unit_id: '',
-    latitude: String(location.latitude),
-    longitude: String(location.longitude),
-    category: 'Fixed Broadband',
-    username: 'crossroads_leadgen',
-  })
-
-  const availRes = await fetch(`${FCC_API}/listAvailability?${availParams}`, {
-    headers: {
-      'Accept': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Referer': 'https://broadbandmap.fcc.gov/',
-    },
-  })
-
-  if (!availRes.ok) {
-    throw new Error(`FCC availability lookup failed: ${availRes.status}`)
-  }
-
-  const availData = await availRes.json()
-  const providers: FccProvider[] = (availData?.results ?? []).map((r: Record<string, unknown>) => ({
-    provider_id: r.provider_id as string,
-    brand_name: r.brand_name as string,
-    technology: technologyName(r.technology as number),
-    max_download_speed: r.max_advertised_download_speed as number ?? 0,
-    max_upload_speed: r.max_advertised_upload_speed as number ?? 0,
-    low_latency: r.low_latency as boolean ?? false,
-  }))
-
-  const fastestDownload = Math.max(0, ...providers.map(p => p.max_download_speed))
-  const hasHighSpeed = fastestDownload >= 100
-  const underserved = providers.length <= 1 || fastestDownload < 25
+  // County lookup is best-effort — don't fail the whole request over it
+  let county: string | null = null
+  try {
+    const areaRes = await fetch(`${FCC_AREA_API}?lat=${lat}&lon=${lon}&format=json`, {
+      headers: { 'Accept': 'application/json' },
+    })
+    if (areaRes.ok) {
+      const area = await areaRes.json()
+      county = area?.results?.[0]?.county_name ?? null
+    }
+  } catch { /* non-fatal */ }
 
   return {
-    location,
-    providers,
-    hasHighSpeed,
-    underserved,
-    providerCount: providers.length,
-    fastestDownload,
-    summary: buildSummary(providers, fastestDownload, underserved),
+    matched: true,
+    matchedAddress: match.matchedAddress,
+    county,
+    lat,
+    lon,
+    mapUrl: `https://broadbandmap.fcc.gov/home?zoom=15&vlat=${lat}&vlon=${lon}`,
+    summary: `Verified: ${match.matchedAddress}${county ? ` (${county} County)` : ''}`,
   }
-}
-
-function buildSummary(providers: FccProvider[], fastest: number, underserved: boolean): string {
-  if (!providers.length) return 'No ISPs on record for this address'
-  const names = [...new Set(providers.map(p => p.brand_name))].slice(0, 3).join(', ')
-  const speed = fastest >= 1000 ? `${fastest / 1000}Gbps` : `${fastest}Mbps`
-  const flag = underserved ? ' UNDERSERVED — Sales opportunity' : ''
-  return `${providers.length} provider(s): ${names} | Fastest: ${speed}${flag}`
-}
-
-function technologyName(code: number): string {
-  const map: Record<number, string> = {
-    10: 'DSL', 11: 'DSL', 12: 'DSL', 20: 'DSL', 30: 'DSL',
-    40: 'Cable', 41: 'Cable', 42: 'Cable', 43: 'Cable', 50: 'Fiber',
-    60: 'Satellite', 61: 'Satellite', 70: 'Fixed Wireless', 71: 'Fixed Wireless',
-    72: 'Fixed Wireless', 300: 'Licensed Fixed Wireless', 400: 'Licensed Fixed Wireless',
-  }
-  return map[code] ?? `Technology ${code}`
 }

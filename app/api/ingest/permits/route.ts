@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { runPermitIngest } from '@/lib/ingest/permits'
 
-export async function POST(req: NextRequest) {
+export const maxDuration = 60
+
+async function runIngest(daysBack: number) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   const db = createClient(supabaseUrl, supabaseKey)
-
-  const body = await req.json().catch(() => ({}))
-  const daysBack: number = body.daysBack ?? 30
 
   const { data: log } = await db.from('ingest_logs').insert({
     source: 'building_permits',
@@ -39,4 +38,14 @@ export async function POST(req: NextRequest) {
     }).eq('id', logId)
     return NextResponse.json({ success: false, error: message }, { status: 500 })
   }
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}))
+  return runIngest(body.daysBack ?? 30)
+}
+
+// Vercel Cron invokes with GET
+export async function GET() {
+  return runIngest(8)
 }
