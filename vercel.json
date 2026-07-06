@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/ingest/sunbiz",
+      "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/ingest/permits",
+      "schedule": "0 9 * * 1"
+    }
+  ]
+}
