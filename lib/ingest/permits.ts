@@ -36,6 +36,64 @@ async function fetchJson(url: string): Promise<Record<string, unknown>> {
   return res.json()
 }
 
+// The city's GeoHub lists "Active Residential / Commercial Permits" as this
+// ArcGIS Online item. Resolve it to its underlying data layer at runtime.
+const AGOL_ITEM = '25641c3e2dab4eff803ed286bef11bf8'
+const AGOL_SHARING = 'https://www.arcgis.com/sharing/rest/content/items'
+
+interface OperationalLayer { url?: string; title?: string }
+
+function pickOperationalLayer(layers: OperationalLayer[]): OperationalLayer | undefined {
+  return layers.find(l => l.url && /comm/i.test(l.title ?? '')) ??
+    layers.find(l => l.url && /permit/i.test(l.title ?? '')) ??
+    layers.find(l => l.url)
+}
+
+async function resolveAgolItem(diag: string[]): Promise<ArcgisLayerRef | null> {
+  try {
+    const item = await fetchJson(`${AGOL_SHARING}/${AGOL_ITEM}?f=json`)
+    const type = String(item.type ?? '')
+    const title = String(item.title ?? '')
+    const url = item.url ? String(item.url) : null
+    diag.push(`[diag] AGOL item: type="${type}" title="${title}" url=${url ?? 'none'}`)
+
+    // Direct service reference
+    if (url && /(FeatureServer|MapServer)/i.test(url)) {
+      if (/\/\d+$/.test(url)) return { url, name: title }
+      const info = await fetchJson(`${url}?f=json`)
+      const layers = (info.layers as { id: number; name: string }[] | undefined) ?? []
+      const layer = layers.find(l => /comm/i.test(l.name)) ?? layers[0]
+      if (layer) return { url: `${url}/${layer.id}`, name: layer.name }
+    }
+
+    // Web map: follow operational layers
+    if (/web map/i.test(type)) {
+      const data = await fetchJson(`${AGOL_SHARING}/${AGOL_ITEM}/data?f=json`)
+      const ops = (data.operationalLayers as OperationalLayer[] | undefined) ?? []
+      diag.push(`[diag] webmap layers: ${ops.map(o => `"${o.title}"`).join(', ')}`)
+      const chosen = pickOperationalLayer(ops)
+      if (chosen?.url) return { url: chosen.url, name: chosen.title ?? 'webmap layer' }
+    }
+
+    // App: follow its web map, then operational layers
+    if (/application|dashboard/i.test(type)) {
+      const data = await fetchJson(`${AGOL_SHARING}/${AGOL_ITEM}/data?f=json`)
+      const mapId = (data as { map?: { itemId?: string }; values?: { webmap?: string } }).map?.itemId
+        ?? (data as { values?: { webmap?: string } }).values?.webmap
+      if (mapId) {
+        const mapData = await fetchJson(`${AGOL_SHARING}/${mapId}/data?f=json`)
+        const ops = (mapData.operationalLayers as OperationalLayer[] | undefined) ?? []
+        diag.push(`[diag] app webmap layers: ${ops.map(o => `"${o.title}"`).join(', ')}`)
+        const chosen = pickOperationalLayer(ops)
+        if (chosen?.url) return { url: chosen.url, name: chosen.title ?? 'app layer' }
+      }
+    }
+  } catch (err) {
+    diag.push(`[diag] AGOL resolution failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  return null
+}
+
 async function findPermitLayer(diag: string[]): Promise<ArcgisLayerRef | null> {
   const root = await fetchJson(`${ARCGIS_ROOT}?f=json`)
   const folders = (root.folders as string[] | undefined) ?? []
@@ -104,8 +162,11 @@ export interface PermitLead {
 export async function fetchTampaPermits(daysBack: number): Promise<{ permits: PermitLead[]; diag: string[] }> {
   const diag: string[] = []
 
-  const layer = await findPermitLayer(diag)
+  const layer = await resolveAgolItem(diag) ?? await findPermitLayer(diag)
   if (!layer) throw new Error('Could not find a permits layer on the Tampa ArcGIS server — see run notes for what was inspected.')
+
+  // A service-root URL (no trailing layer index) queries as its first layer
+  if (!/\/\d+$/.test(layer.url)) layer.url = `${layer.url.replace(/\/$/, '')}/0`
 
   // Read the layer's field list so we can map columns by name
   const meta = await fetchJson(`${layer.url}?f=json`)
