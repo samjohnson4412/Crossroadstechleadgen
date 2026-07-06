@@ -14,10 +14,10 @@ import { format } from 'date-fns'
 
 interface FccResult {
   success: boolean
-  providers?: string[]
-  hasHighSpeed?: boolean
-  underserved?: boolean
-  fastestDownload?: number
+  matched?: boolean
+  matchedAddress?: string | null
+  county?: string | null
+  mapUrl?: string | null
   summary?: string
   error?: string
 }
@@ -75,7 +75,7 @@ export default function LeadDetailPage() {
       })
       const data = await res.json()
       setFccResult(data)
-      if (data.success) load()
+      if (data.success && data.matched) load()
     } catch (err) {
       setFccResult({ success: false, error: String(err) })
     } finally {
@@ -223,33 +223,41 @@ export default function LeadDetailPage() {
 
         {/* FCC lookup result */}
         {fccResult && (
-          <div className={`mt-4 p-4 rounded-lg text-sm border ${fccResult.success ? (fccResult.underserved ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200') : 'bg-red-50 border-red-200'}`}>
-            {fccResult.success ? (
+          <div className={`mt-4 p-4 rounded-lg text-sm border ${fccResult.success && fccResult.matched ? 'bg-green-50 border-green-200' : fccResult.success ? 'bg-orange-50 border-orange-200' : 'bg-red-50 border-red-200'}`}>
+            {fccResult.success && fccResult.matched ? (
               <>
-                <div className="flex items-center gap-2 font-medium mb-2">
-                  {fccResult.underserved
-                    ? <AlertTriangle size={15} className="text-orange-500" />
-                    : <CheckCircle size={15} className="text-green-600" />}
-                  <span style={{ color: fccResult.underserved ? '#b45309' : '#15803d' }}>
-                    {fccResult.underserved ? 'Underserved area — ISP opportunity!' : 'Broadband available'}
-                  </span>
+                <div className="flex items-center gap-2 font-medium mb-1">
+                  <CheckCircle size={15} className="text-green-600" />
+                  <span style={{ color: '#15803d' }}>Address verified</span>
                 </div>
-                <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>{fccResult.summary}</p>
-                {fccResult.providers && fccResult.providers.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {fccResult.providers.map((p, i) => (
-                      <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-white border border-gray-200" style={{ color: 'var(--text)' }}>{p}</span>
-                    ))}
-                  </div>
+                <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                  {fccResult.matchedAddress}
+                  {fccResult.county && ` — ${fccResult.county} County (saved to lead if county was blank)`}
+                </p>
+                {fccResult.mapUrl && (
+                  <a
+                    href={fccResult.mapUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                    style={{ background: 'var(--blue)' }}
+                  >
+                    <ExternalLink size={12} /> Open FCC Broadband Map
+                  </a>
                 )}
                 <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
-                  ISP and speed fields updated on this lead.
+                  Search this address on the map to see available ISPs and speeds, then record them via Edit.
                 </p>
               </>
+            ) : fccResult.success ? (
+              <div className="flex items-center gap-2" style={{ color: '#b45309' }}>
+                <AlertTriangle size={15} />
+                {fccResult.summary ?? 'Address not found — check the street address and ZIP.'}
+              </div>
             ) : (
               <div className="flex items-center gap-2" style={{ color: 'var(--danger)' }}>
                 <AlertTriangle size={15} />
-                {fccResult.error ?? 'FCC lookup failed — address may not be specific enough.'}
+                {fccResult.error ?? 'Lookup failed.'}
               </div>
             )}
           </div>
