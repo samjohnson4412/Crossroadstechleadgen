@@ -38,8 +38,8 @@ const SOURCES = [
   },
   {
     id: 'permits',
-    label: 'Hillsborough County Building Permits',
-    description: 'Pulls commercial building permits from Hillsborough County. New construction and renovations signal immediate need for low-voltage, cameras, and networking.',
+    label: 'Tampa Building Permits',
+    description: 'Pulls commercial building permits from the City of Tampa open data portal. New construction and renovations signal immediate need for low-voltage, cameras, and networking.',
     icon: <FileText size={20} />,
     endpoint: '/api/ingest/permits',
     defaultDays: 30,
@@ -300,5 +300,5 @@ function StatusIcon({ status }: { status: string }) {
 
 const SOURCE_LABELS: Record<string, string> = {
   sunbiz: 'Florida SOS — Sunbiz',
-  building_permits: 'Hillsborough Building Permits',
+  building_permits: 'Tampa Building Permits',
 }
