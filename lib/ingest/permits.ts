@@ -1,9 +1,15 @@
+// Hillsborough County Building Permit scraper
+// Public data portal: https://www.hillsboroughcounty.org/en/residents/property-owners-and-renters/building-services
+
 import { parse } from 'node-html-parser'
 import { createClient } from '@supabase/supabase-js'
 import { CITY_TO_COUNTY } from './constants'
 
 const HILLSBOROUGH_BASE = 'https://aca-prod.accela.com/HILLSBOROUGH'
 
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
+// Commercial permit type codes that signal low-voltage / networking / security work
 const COMMERCIAL_TYPES = [
   'COMMERCIAL NEW', 'COMMERCIAL ADDITION', 'COMMERCIAL ALTERATION',
   'TENANT IMPROVEMENT', 'CHANGE OF OCCUPANCY', 'COMMERCIAL REMODEL',
@@ -30,9 +36,18 @@ export async function fetchHillsboroughPermits(daysBack = 30): Promise<PermitRec
   const searchUrl = `${HILLSBOROUGH_BASE}/Cap/CapHome.aspx?module=Building&TabName=Building`
 
   const getRes = await fetch(searchUrl, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CrossroadsLeadGen/1.0)' },
+    headers: {
+      'User-Agent': BROWSER_UA,
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
   })
   if (!getRes.ok) throw new Error(`Hillsborough portal returned ${getRes.status}`)
+
+  const cookies = (getRes.headers.get('set-cookie') ?? '')
+    .split(/,(?=[^;]+=[^;]+)/)
+    .map(c => c.trim().split(';')[0])
+    .join('; ')
 
   const html = await getRes.text()
   const root = parse(html)
@@ -50,12 +65,13 @@ export async function fetchHillsboroughPermits(daysBack = 30): Promise<PermitRec
     'ctl00$PlaceHolderMain$generalSearchForm$btnSearch': 'Search',
   })
 
-  const postRes = await fetch(`${HILLSBOROUGH_BASE}/Cap/CapHome.aspx?module=Building&TabName=Building`, {
+  const postRes = await fetch(searchUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'Mozilla/5.0 (compatible; CrossroadsLeadGen/1.0)',
+      'User-Agent': BROWSER_UA,
       'Referer': searchUrl,
+      'Cookie': cookies,
     },
     body: formData.toString(),
   })

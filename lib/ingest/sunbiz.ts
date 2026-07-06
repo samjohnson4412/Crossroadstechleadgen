@@ -40,7 +40,15 @@ function dateRange(daysBack: number): { begin: string; end: string } {
   return { begin: fmt(begin), end: fmt(end) }
 }
 
-async function searchSunbiz(city: string, begin: string, end: string, skip = 0): Promise<SunbizEntity[]> {
+async function getSunbizSession(): Promise<string> {
+  const res = await fetch('https://search.sunbiz.org/Inquiry/corporationsearch/ByEntityName', {
+    headers: BROWSER_HEADERS,
+  })
+  const raw = res.headers.get('set-cookie') ?? ''
+  return raw.split(/,(?=[^;]+=[^;]+)/).map(c => c.trim().split(';')[0]).join('; ')
+}
+
+async function searchSunbiz(city: string, begin: string, end: string, cookies: string, skip = 0): Promise<SunbizEntity[]> {
   const body = [
     `SearchTerm=`,
     `SearchType=EntityName`,
@@ -61,6 +69,7 @@ async function searchSunbiz(city: string, begin: string, end: string, skip = 0):
     headers: {
       ...BROWSER_HEADERS,
       'Content-Type': 'application/x-www-form-urlencoded',
+      ...(cookies ? { 'Cookie': cookies } : {}),
     },
     body,
   })
@@ -137,9 +146,11 @@ export async function runSunbizIngest(
   const errors: string[] = []
   let found = 0, inserted = 0, skipped = 0
 
+  const cookies = await getSunbizSession().catch(() => '')
+
   for (const city of SUNBIZ_SEARCH_CITIES) {
     try {
-      const entities = await searchSunbiz(city, begin, end)
+      const entities = await searchSunbiz(city, begin, end, cookies)
       found += entities.length
 
       for (const entity of entities) {

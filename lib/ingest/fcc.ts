@@ -1,3 +1,6 @@
+// FCC National Broadband Map API
+// Docs: https://broadbandmap.fcc.gov/home/data
+
 const FCC_API = 'https://broadbandmap.fcc.gov/api/public/map'
 
 export interface FccLocation {
@@ -43,19 +46,34 @@ export async function lookupAddressCoverage(
     unit: '',
     limit: '1',
     offset: '0',
+    username: 'crossroads_leadgen',
   })
 
   const locationRes = await fetch(`${FCC_API}/location/search?${locationParams}`, {
-    headers: { 'Accept': 'application/json' },
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Referer': 'https://broadbandmap.fcc.gov/',
+    },
   })
 
-  if (!locationRes.ok) throw new Error(`FCC location lookup failed: ${locationRes.status}`)
+  if (!locationRes.ok) {
+    throw new Error(`FCC location lookup failed: ${locationRes.status}`)
+  }
 
   const locationData = await locationRes.json()
   const locations: FccLocation[] = locationData?.results ?? []
 
   if (!locations.length) {
-    return { location: null, providers: [], hasHighSpeed: false, underserved: true, providerCount: 0, fastestDownload: 0, summary: 'Address not found in FCC database' }
+    return {
+      location: null,
+      providers: [],
+      hasHighSpeed: false,
+      underserved: true,
+      providerCount: 0,
+      fastestDownload: 0,
+      summary: 'Address not found in FCC database',
+    }
   }
 
   const location = locations[0]
@@ -66,22 +84,29 @@ export async function lookupAddressCoverage(
     latitude: String(location.latitude),
     longitude: String(location.longitude),
     category: 'Fixed Broadband',
+    username: 'crossroads_leadgen',
   })
 
   const availRes = await fetch(`${FCC_API}/listAvailability?${availParams}`, {
-    headers: { 'Accept': 'application/json' },
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Referer': 'https://broadbandmap.fcc.gov/',
+    },
   })
 
-  if (!availRes.ok) throw new Error(`FCC availability lookup failed: ${availRes.status}`)
+  if (!availRes.ok) {
+    throw new Error(`FCC availability lookup failed: ${availRes.status}`)
+  }
 
   const availData = await availRes.json()
   const providers: FccProvider[] = (availData?.results ?? []).map((r: Record<string, unknown>) => ({
     provider_id: r.provider_id as string,
     brand_name: r.brand_name as string,
     technology: technologyName(r.technology as number),
-    max_download_speed: (r.max_advertised_download_speed as number) ?? 0,
-    max_upload_speed: (r.max_advertised_upload_speed as number) ?? 0,
-    low_latency: (r.low_latency as boolean) ?? false,
+    max_download_speed: r.max_advertised_download_speed as number ?? 0,
+    max_upload_speed: r.max_advertised_upload_speed as number ?? 0,
+    low_latency: r.low_latency as boolean ?? false,
   }))
 
   const fastestDownload = Math.max(0, ...providers.map(p => p.max_download_speed))
@@ -103,7 +128,7 @@ function buildSummary(providers: FccProvider[], fastest: number, underserved: bo
   if (!providers.length) return 'No ISPs on record for this address'
   const names = [...new Set(providers.map(p => p.brand_name))].slice(0, 3).join(', ')
   const speed = fastest >= 1000 ? `${fastest / 1000}Gbps` : `${fastest}Mbps`
-  const flag = underserved ? ' ⚠️ UNDERSERVED — Sales opportunity' : ''
+  const flag = underserved ? ' UNDERSERVED — Sales opportunity' : ''
   return `${providers.length} provider(s): ${names} | Fastest: ${speed}${flag}`
 }
 
