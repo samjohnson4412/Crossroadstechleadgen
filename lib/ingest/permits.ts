@@ -1,168 +1,166 @@
-// Hillsborough County Building Permit scraper
-// HillsGovHub (Accela Citizen Access): https://aca-prod.accela.com/HCFL/
+// Tampa building permits via the City of Tampa GeoHub (ArcGIS Open Data).
 //
-// Accela is an ASP.NET WebForms app: the search must be submitted as a
-// postback carrying every form field the page rendered, plus __EVENTTARGET
-// pointing at the search button. We read the real form off the page rather
-// than hardcoding field names, so tenant-specific naming doesn't break us.
+// The county's Accela portal (HillsGovHub) renders its search form with
+// JavaScript, so it can't be driven server-side. The City of Tampa instead
+// publishes an "Active Residential / Commercial Permits" layer on its public
+// ArcGIS REST server — a real JSON API meant for programmatic access:
+//   https://city-tampa.opendata.arcgis.com/datasets/active-residential-commercial-permits-1/about
+//
+// The exact service path can change as the city reorganizes its GeoHub, so we
+// discover the permit layer at runtime from the REST services directory and
+// read its field list from layer metadata.
 
-import { parse, HTMLElement } from 'node-html-parser'
 import { createClient } from '@supabase/supabase-js'
-import { CITY_TO_COUNTY } from './constants'
 
-// HillsGovHub — Hillsborough County's Accela tenant is "HCFL"
-const HILLSBOROUGH_BASE = 'https://aca-prod.accela.com/HCFL'
-
+const ARCGIS_ROOT = 'https://arcgis.tampagov.net/arcgis/rest/services'
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
-// Commercial permit keywords that signal low-voltage / networking / security work
-const COMMERCIAL_TYPES = [
-  'COMMERCIAL', 'TENANT IMPROVEMENT', 'CHANGE OF OCCUPANCY', 'NEW CONSTRUCTION',
-]
+// Keywords that signal a commercial project worth pitching low-voltage/cameras/networking
+const COMMERCIAL_MARKERS = ['COMM', 'TENANT', 'OFFICE', 'RETAIL', 'RESTAURANT', 'WAREHOUSE', 'INDUSTRIAL']
 
-export interface PermitRecord {
+interface ArcgisLayerRef {
+  url: string
+  name: string
+}
+
+interface ArcgisField {
+  name: string
+  type: string
+}
+
+async function fetchJson(url: string): Promise<Record<string, unknown>> {
+  const res = await fetch(url, {
+    headers: { 'Accept': 'application/json', 'User-Agent': BROWSER_UA },
+  })
+  if (!res.ok) throw new Error(`ArcGIS returned ${res.status} for ${url}`)
+  return res.json()
+}
+
+async function findPermitLayer(diag: string[]): Promise<ArcgisLayerRef | null> {
+  const root = await fetchJson(`${ARCGIS_ROOT}?f=json`)
+  const folders = (root.folders as string[] | undefined) ?? []
+  const rootServices = (root.services as { name: string; type: string }[] | undefined) ?? []
+
+  diag.push(`[diag] arcgis root: folders=[${folders.slice(0, 10).join(', ')}], services=${rootServices.length}`)
+
+  // Gather services: root ones plus likely folders (permit/open-data/development flavored first)
+  const services: { name: string; type: string }[] = [...rootServices]
+  const likelyFolders = folders.sort((a, b) => {
+    const score = (f: string) => (/permit|open|develop|construct/i.test(f) ? 0 : 1)
+    return score(a) - score(b)
+  })
+  for (const folder of likelyFolders.slice(0, 6)) {
+    try {
+      const info = await fetchJson(`${ARCGIS_ROOT}/${folder}?f=json`)
+      services.push(...(((info.services as { name: string; type: string }[] | undefined) ?? [])))
+    } catch { /* skip unreadable folders */ }
+  }
+
+  // Inspect permit-flavored services first, then a few others
+  const ordered = services.sort((a, b) => {
+    const score = (s: { name: string }) => (/permit/i.test(s.name) ? 0 : 1)
+    return score(a) - score(b)
+  })
+
+  let inspected = 0
+  for (const svc of ordered) {
+    if (inspected >= 12) break
+    if (svc.type !== 'MapServer' && svc.type !== 'FeatureServer') continue
+    inspected++
+    try {
+      const svcUrl = `${ARCGIS_ROOT}/${svc.name}/${svc.type}`
+      const info = await fetchJson(`${svcUrl}?f=json`)
+      const layers = (info.layers as { id: number; name: string }[] | undefined) ?? []
+      for (const layer of layers) {
+        if (/permit/i.test(layer.name)) {
+          diag.push(`[diag] permit layer found: ${svc.name}/${svc.type}/${layer.id} "${layer.name}"`)
+          return { url: `${svcUrl}/${layer.id}`, name: layer.name }
+        }
+      }
+    } catch { /* skip broken services */ }
+  }
+
+  diag.push(`[diag] no layer named *permit* among ${inspected} inspected services: ${ordered.slice(0, 12).map(s => s.name).join(', ')}`)
+  return null
+}
+
+export interface PermitLead {
   permitNumber: string
   permitType: string
   address: string
-  city: string
-  projectName: string
-  issueDate: string
   description: string
+  issueDate: string
 }
 
-export async function fetchHillsboroughPermits(daysBack = 30): Promise<{ permits: PermitRecord[]; diag: string[] }> {
+export async function fetchTampaPermits(daysBack: number): Promise<{ permits: PermitLead[]; diag: string[] }> {
   const diag: string[] = []
-  const end = new Date()
-  const begin = new Date()
-  begin.setDate(begin.getDate() - daysBack)
 
-  const fmtDate = (d: Date) =>
-    `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`
+  const layer = await findPermitLayer(diag)
+  if (!layer) throw new Error('Could not find a permits layer on the Tampa ArcGIS server — see run notes for what was inspected.')
 
-  const searchUrl = `${HILLSBOROUGH_BASE}/Cap/CapHome.aspx?module=Building&TabName=Building`
+  // Read the layer's field list so we can map columns by name
+  const meta = await fetchJson(`${layer.url}?f=json`)
+  const fields = ((meta.fields as ArcgisField[] | undefined) ?? [])
+  const fieldNames = fields.map(f => f.name)
+  diag.push(`[diag] layer fields: ${fieldNames.slice(0, 16).join(', ')}`)
 
-  const getRes = await fetch(searchUrl, {
-    headers: { 'User-Agent': BROWSER_UA },
+  const findField = (patterns: RegExp[], typeFilter?: string) =>
+    fields.find(f =>
+      patterns.some(p => p.test(f.name)) && (!typeFilter || f.type === typeFilter)
+    )?.name
+
+  const dateField =
+    findField([/issue/i], 'esriFieldTypeDate') ??
+    findField([/date/i], 'esriFieldTypeDate')
+  const numField = findField([/permit.?(no|num)/i, /record/i, /^permit$/i, /number/i])
+  const addrField = findField([/address|site_?addr|location/i])
+  const typeField = findField([/type|class|category/i])
+  const descField = findField([/desc|project|work|name/i])
+
+  diag.push(`[diag] mapped: num=${numField ?? '?'} addr=${addrField ?? '?'} type=${typeField ?? '?'} desc=${descField ?? '?'} date=${dateField ?? '?'}`)
+
+  // Pull the most recent records and filter by date client-side (avoids SQL dialect issues)
+  const query = new URLSearchParams({
+    where: '1=1',
+    outFields: '*',
+    returnGeometry: 'false',
+    resultRecordCount: '1000',
+    f: 'json',
   })
-  if (!getRes.ok) throw new Error(`Hillsborough portal returned ${getRes.status}`)
+  if (dateField) query.set('orderByFields', `${dateField} DESC`)
 
-  const cookies = (getRes.headers.get('set-cookie') ?? '')
-    .split(/,(?=[^;]+=[^;]+)/)
-    .map(c => c.trim().split(';')[0])
-    .join('; ')
+  const data = await fetchJson(`${layer.url}/query?${query}`)
+  const features = ((data.features as { attributes: Record<string, unknown> }[] | undefined) ?? [])
+  diag.push(`[diag] query returned ${features.length} features` +
+    (features[0] ? ` | sample: ${JSON.stringify(features[0].attributes).slice(0, 280)}` : ''))
 
-  const html = await getRes.text()
-  const root = parse(html)
+  const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000
+  const permits: PermitLead[] = []
 
-  // Collect every form field the page actually rendered
-  const formData = new URLSearchParams()
-  for (const input of root.querySelectorAll('input[name]')) {
-    const name = input.getAttribute('name')!
-    const type = (input.getAttribute('type') ?? 'text').toLowerCase()
-    if (type === 'submit' || type === 'button' || type === 'image') continue
-    if ((type === 'checkbox' || type === 'radio') && input.getAttribute('checked') == null) continue
-    formData.set(name, input.getAttribute('value') ?? '')
+  for (const feat of features) {
+    const a = feat.attributes
+
+    if (dateField) {
+      const ts = a[dateField]
+      if (typeof ts === 'number' && ts < cutoff) continue
+    }
+
+    const typeVal = String(typeField ? a[typeField] ?? '' : '')
+    const descVal = String(descField ? a[descField] ?? '' : '')
+    const haystack = `${typeVal} ${descVal}`.toUpperCase()
+    if (!COMMERCIAL_MARKERS.some(m => haystack.includes(m))) continue
+
+    const address = String(addrField ? a[addrField] ?? '' : '').replace(/\s+/g, ' ').trim()
+    const permitNumber = String(numField ? a[numField] ?? '' : '').trim()
+    if (!address || !permitNumber) continue
+
+    const ts = dateField ? a[dateField] : null
+    const issueDate = typeof ts === 'number' ? new Date(ts).toLocaleDateString('en-US') : ''
+
+    permits.push({ permitNumber, permitType: typeVal, address, description: descVal, issueDate })
   }
-  for (const select of root.querySelectorAll('select[name]')) {
-    const name = select.getAttribute('name')!
-    const selected = select.querySelector('option[selected]') ?? select.querySelector('option')
-    formData.set(name, selected?.getAttribute('value') ?? '')
-  }
-
-  // Locate the real date fields and search trigger
-  const fieldNames = [...formData.keys()]
-  const dateFrom = fieldNames.find(n => /datefrom/i.test(n))
-  const dateTo = fieldNames.find(n => /dateto/i.test(n))
-  const dateKind = fieldNames.find(n => /datesearchfield|searchdatetype/i.test(n))
-  const searchTarget =
-    html.match(/__doPostBack\('([^']*btnNewSearch[^']*)'/i)?.[1] ??
-    html.match(/__doPostBack\('([^']*btnSearch[^']*)'/i)?.[1] ??
-    null
-
-  if (dateFrom) formData.set(dateFrom, fmtDate(begin))
-  if (dateTo) formData.set(dateTo, fmtDate(end))
-  if (searchTarget) {
-    formData.set('__EVENTTARGET', searchTarget)
-    formData.set('__EVENTARGUMENT', '')
-  }
-
-  const dateKindSelect = dateKind ? root.querySelector(`select[name="${dateKind}"]`) : null
-  const dateKindOptions = dateKindSelect
-    ? dateKindSelect.querySelectorAll('option').map(o => `${o.getAttribute('value')}=${o.text.trim()}`).slice(0, 8).join(' | ')
-    : 'n/a'
-
-  diag.push(`[diag] form: ${fieldNames.length} fields | dateFrom=${dateFrom ?? 'NOT FOUND'} | dateTo=${dateTo ?? 'NOT FOUND'} | searchBtn=${searchTarget ?? 'NOT FOUND'} | dateKind=${dateKind ?? 'none'} opts: ${dateKindOptions}`)
-
-  const postRes = await fetch(searchUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': BROWSER_UA,
-      'Referer': searchUrl,
-      ...(cookies ? { 'Cookie': cookies } : {}),
-    },
-    body: formData.toString(),
-  })
-
-  if (!postRes.ok) throw new Error(`Hillsborough search POST returned ${postRes.status}`)
-  const resultsHtml = await postRes.text()
-  const resultRoot = parse(resultsHtml)
-
-  const { permits, gridDiag } = parsePermitResults(resultRoot)
-  diag.push(`[diag] POST ${postRes.status}: ${resultsHtml.length} chars | ${gridDiag}`)
 
   return { permits, diag }
-}
-
-// Find the results grid by its headers instead of guessing table ids/positions
-function parsePermitResults(root: HTMLElement): { permits: PermitRecord[]; gridDiag: string } {
-  const permits: PermitRecord[] = []
-  const candidates: string[] = []
-
-  for (const table of root.querySelectorAll('table')) {
-    const headerCells = table.querySelectorAll('th, tr:first-child td').map(c => c.text.trim().toLowerCase())
-    if (headerCells.length < 3) continue
-
-    const col = (patterns: RegExp[]) =>
-      headerCells.findIndex(h => patterns.some(p => p.test(h)))
-
-    const numIdx = col([/record number/, /permit number/, /^record$/, /^permit$/])
-    const addrIdx = col([/address/])
-    if (numIdx === -1 || addrIdx === -1) continue
-
-    const typeIdx = col([/record type/, /permit type/, /^type$/])
-    const dateIdx = col([/^date$/, /date opened/, /issued/, /file date/])
-    const descIdx = col([/description/, /project name/, /short notes/])
-
-    const id = table.getAttribute('id') ?? '(no id)'
-    const rows = table.querySelectorAll('tr').slice(1)
-    candidates.push(`grid ${id}: ${rows.length} rows, headers=[${headerCells.slice(0, 8).join(', ')}]`)
-
-    for (const row of rows) {
-      const cells = row.querySelectorAll('td')
-      if (cells.length <= Math.max(numIdx, addrIdx)) continue
-      const permitNumber = cells[numIdx]?.text.trim()
-      const address = cells[addrIdx]?.text.trim().replace(/\s+/g, ' ')
-      if (!permitNumber || !address || permitNumber.length < 4) continue
-
-      const permitType = typeIdx >= 0 ? cells[typeIdx]?.text.trim() ?? '' : ''
-      const issueDate = dateIdx >= 0 ? cells[dateIdx]?.text.trim() ?? '' : ''
-      const description = descIdx >= 0 ? cells[descIdx]?.text.trim() ?? '' : ''
-
-      const isCommercial = COMMERCIAL_TYPES.some(t =>
-        permitType.toUpperCase().includes(t) || description.toUpperCase().includes(t)
-      )
-      if (!isCommercial) continue
-
-      permits.push({ permitNumber, permitType, address, city: 'Tampa', projectName: description, issueDate, description })
-    }
-  }
-
-  const gridDiag = candidates.length
-    ? candidates.slice(0, 3).join(' || ')
-    : `no results grid found (tables=${root.querySelectorAll('table').length})`
-
-  return { permits, gridDiag }
 }
 
 export async function runPermitIngest(
@@ -175,7 +173,7 @@ export async function runPermitIngest(
   let found = 0, inserted = 0, skipped = 0
 
   try {
-    const { permits, diag } = await fetchHillsboroughPermits(daysBack)
+    const { permits, diag } = await fetchTampaPermits(daysBack)
     errors.push(...diag)
     found = permits.length
 
@@ -190,15 +188,14 @@ export async function runPermitIngest(
 
       if (existing && existing.length > 0) { skipped++; continue }
 
-      const cityKey = permit.city.toUpperCase()
-      const county = CITY_TO_COUNTY[cityKey] ?? 'Hillsborough'
-
       const { error } = await db.from('businesses').insert({
-        company_name: permit.projectName || `Commercial Permit — ${permit.address}`,
+        company_name: permit.description
+          ? permit.description.slice(0, 120)
+          : `Commercial Permit — ${permit.address}`,
         address: permit.address,
-        city: permit.city,
+        city: 'Tampa',
         state: 'FL',
-        county,
+        county: 'Hillsborough',
         lead_source: 'Building Permit',
         pitch_angle: 'Camera / Surveillance',
         status: 'cold',
