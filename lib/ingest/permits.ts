@@ -62,6 +62,8 @@ async function findPermitLayer(diag: string[]): Promise<ArcgisLayerRef | null> {
     return score(a) - score(b)
   })
 
+  // Collect ALL permit-named layers, then prefer commercial over residential
+  const candidates: (ArcgisLayerRef & { score: number })[] = []
   let inspected = 0
   for (const svc of ordered) {
     if (inspected >= 12) break
@@ -72,16 +74,23 @@ async function findPermitLayer(diag: string[]): Promise<ArcgisLayerRef | null> {
       const info = await fetchJson(`${svcUrl}?f=json`)
       const layers = (info.layers as { id: number; name: string }[] | undefined) ?? []
       for (const layer of layers) {
-        if (/permit/i.test(layer.name)) {
-          diag.push(`[diag] permit layer found: ${svc.name}/${svc.type}/${layer.id} "${layer.name}"`)
-          return { url: `${svcUrl}/${layer.id}`, name: layer.name }
-        }
+        if (!/permit/i.test(layer.name)) continue
+        const score = /comm/i.test(layer.name) ? 0
+          : /single|resid|family/i.test(layer.name) ? 2
+          : 1
+        candidates.push({ url: `${svcUrl}/${layer.id}`, name: layer.name, score })
       }
     } catch { /* skip broken services */ }
   }
 
-  diag.push(`[diag] no layer named *permit* among ${inspected} inspected services: ${ordered.slice(0, 12).map(s => s.name).join(', ')}`)
-  return null
+  if (candidates.length === 0) {
+    diag.push(`[diag] no layer named *permit* among ${inspected} inspected services: ${ordered.slice(0, 12).map(s => s.name).join(', ')}`)
+    return null
+  }
+
+  candidates.sort((a, b) => a.score - b.score)
+  diag.push(`[diag] permit layers found: ${candidates.map(c => `"${c.name}"`).join(', ')} — using "${candidates[0].name}" (${candidates[0].url})`)
+  return candidates[0]
 }
 
 export interface PermitLead {
