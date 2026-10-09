@@ -25,6 +25,7 @@ export const blueIrisDriver: IntegrationDriver = {
 
     async function call(body: Record<string, unknown>) {
       const res = await fetch(`${base}/json`, {
+        signal: AbortSignal.timeout(8000),
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

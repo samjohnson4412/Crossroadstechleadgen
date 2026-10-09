@@ -9,6 +9,8 @@ import type { Alert, AlertChannel, AlertDelivery, AlertSpec } from "./alerts.ts"
 import { newId, type RawEvent, type SecurityEvent } from "./events.ts";
 import { SiteGraph } from "./graph.ts";
 import type { AuditEntry, IntegrationView, LiveMessage, LiveState } from "./live.ts";
+import { loadSettings, resolveIntegrationSettings, saveSettings } from "./settingsStore.ts";
+import { fieldInfo } from "../integrations/fields.ts";
 import { loadOverrides, saveOverrides, type NamedKind, type SiteLayout, type SiteOverrides } from "./overrides.ts";
 import type { IntegrationConfig, SiteConfig } from "./site.ts";
 
@@ -26,12 +28,7 @@ interface RunningIntegration {
 }
 
 function resolveSettings(config: IntegrationConfig) {
-  const out: Record<string, string | number | boolean | undefined> = {};
-  for (const [key, value] of Object.entries(config.settings)) {
-    if (typeof value === "object") out[key] = process.env[value.env] || value.default || undefined;
-    else out[key] = value;
-  }
-  return out;
+  return resolveIntegrationSettings(config).values;
 }
 
 /**
@@ -100,7 +97,7 @@ export class Runtime {
         continue;
       }
       const simulated = forceSim || missing.length > 0;
-      const running = { config, driver, simulated, health: { state: "unconfigured", checkedAt: new Date().toISOString() } } as RunningIntegration;
+      const running = { config, driver, simulated, health: { state: "connecting", checkedAt: new Date().toISOString() } } as RunningIntegration;
       const ctx = {
         config,
         graph: this.graph,
@@ -550,13 +547,61 @@ export class Runtime {
     this.broadcast({ type: "track", track: this.tracker.get(trackId) });
   }
 
+  /** Settings page view: every integration's fields, with secrets reduced to "is it set". */
+  settingsView() {
+    const stored = loadSettings();
+    return this.site.integrations.map((config) => {
+      const r = this.integrations.get(config.id);
+      const { values, sources } = resolveIntegrationSettings(config, stored);
+      return {
+        id: config.id,
+        name: config.name,
+        driver: config.driver,
+        driverLabel: r?.driver.label ?? config.driver,
+        health: r?.health,
+        simulated: r?.simulated ?? false,
+        optional: !!config.optional,
+        required: drivers[config.driver]?.requiredSettings ?? [],
+        fields: Object.keys(config.settings).map((key) => {
+          const info = fieldInfo(config.driver, key);
+          const secret = info.type === "password";
+          const value = values[key];
+          return {
+            key,
+            ...info,
+            source: sources[key],
+            isSet: value !== undefined && value !== "",
+            value: secret ? undefined : value === undefined ? "" : String(value),
+          };
+        }),
+      };
+    });
+  }
+
+  /** Save Settings-page values for one integration and reconnect. "" clears a value (falls back to .env.local/default); omitted keys are unchanged. */
+  async saveIntegrationSettings(integrationId: string, values: Record<string, string>, actor: Actor) {
+    const config = this.site.integrations.find((c) => c.id === integrationId);
+    if (!config) throw new Error("Unknown integration");
+    const stored = loadSettings();
+    const current = { ...(stored.integrations[integrationId] ?? {}) };
+    const changed: string[] = [];
+    for (const [key, value] of Object.entries(values)) {
+      if (!(key in config.settings)) throw new Error(`Unknown setting "${key}"`);
+      const v = String(value).trim();
+      if (v) current[key] = v;
+      else delete current[key];
+      changed.push(key);
+    }
+    stored.integrations[integrationId] = current;
+    await this.audited(actor, "settings.save", `${config.name}: ${changed.join(", ") || "no changes"}`, async () => saveSettings(stored));
+    await reloadRuntime();
+  }
+
   /** What a connection check needs: which settings are filled in (never their values), health, and the driver's own test. */
   async checkIntegration(integrationId: string) {
     const r = this.integrations.get(integrationId);
     if (!r) throw new Error("Unknown integration");
-    const settings = Object.fromEntries(
-      Object.entries(r.config.settings).map(([key, v]) => [key, typeof v === "object" ? `${v.env}: ${process.env[v.env] ? "set" : "NOT SET"}` : "set in config"]),
-    );
+    const settings = resolveIntegrationSettings(r.config).sources;
     return {
       integration: r.config.name,
       driver: r.driver.label,

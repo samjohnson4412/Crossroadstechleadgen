@@ -12,7 +12,7 @@ import type { IntegrationConfig } from "../core/site.ts";
 
 export type Capability = "cameras" | "access-control" | "alerts" | "messaging" | "paging";
 
-export type HealthState = "ok" | "degraded" | "offline" | "simulated" | "unconfigured";
+export type HealthState = "ok" | "connecting" | "degraded" | "offline" | "simulated" | "unconfigured";
 
 export interface IntegrationHealth {
   state: HealthState;

@@ -257,3 +257,27 @@ button.on-muted { color: var(--muted); }
 .ab-btn.strong { background: white; color: #111; font-weight: 700; }
 .ab-details { position: absolute; right: 14px; top: 100%; z-index: 5; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; width: min(520px, 90vw); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
 @media (max-width: 700px) { .channel-list { grid-template-columns: 1fr; } }
+
+/* ---------- settings ---------- */
+.button-link { display: inline-flex; align-items: center; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--text); text-decoration: none; white-space: nowrap; }
+.button-link:hover { border-color: #3b4757; }
+.settings-page { min-height: 100vh; }
+.settings-main { max-width: 1200px; margin: 0 auto; padding: 18px 16px 60px; }
+.settings-main h2 { margin: 18px 0 6px; }
+.settings-main code { margin: 0 4px; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; margin-top: 12px; }
+@media (max-width: 500px) { .settings-grid { grid-template-columns: 1fr; } }
+.settings-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.sc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.sc-head h3 { margin: 0; }
+.sc-field { margin-bottom: 10px; }
+.sc-field label { margin-bottom: 3px; }
+.sc-field label > span { display: flex; gap: 6px; align-items: center; }
+.sc-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 11px; color: var(--muted); }
+.req { font-size: 10px; color: #ffd166; border: 1px solid #5a420a; border-radius: 6px; padding: 0 5px; }
+.src { padding: 0 6px; border-radius: 6px; background: var(--panel-2); }
+.src-settingspage { color: var(--ok); } .src-envlocal { color: var(--accent); } .src-notset { color: var(--danger); }
+.ok-text { color: var(--ok); font-size: 12px; }
+.test-result { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 12px; overflow-x: auto; }
+.health-unconfigured { color: var(--muted); }
+.health-connecting { color: #ffd166; }

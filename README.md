@@ -34,6 +34,12 @@ First client: **CCC** (UniFi Access doors, Blue Iris cameras, SaferWatch, SMART 
 - **Simulator** — any integration without credentials runs on a simulated building with people
   walking around, so everything above can be demoed with no hardware.
 
+## Settings
+
+**⚙ (top bar) → Settings**: addresses, usernames, passwords and tokens for every system, with
+*Test connection*. Saved values live on the server in `data/settings.<site>.json` (never sent back to
+the browser) and take priority over `.env.local`.
+
 ## Run it
 
 ```bash

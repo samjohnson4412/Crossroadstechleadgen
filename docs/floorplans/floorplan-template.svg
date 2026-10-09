@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  Campus Sentinel floor plan template — one file per building level.
+  Open in Inkscape (free: inkscape.org). See INKSCAPE_GUIDE.md.
+  Page: 17 x 11 in (tabloid, landscape).
+-->
+<svg
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   width="17in" height="11in" viewBox="0 0 1700 1100"
+   version="1.1">
+  <title>Building – Level</title>
+  <sodipodi:namedview
+     id="view" pagecolor="#ffffff" bordercolor="#666666" showgrid="false"
+     inkscape:snap-global="true" inkscape:snap-nodes="true" inkscape:snap-path="true"
+     inkscape:snap-intersection-paths="true" inkscape:snap-perpendicular="true"
+     inkscape:document-units="in" />
+
+  <!-- Layers are listed bottom to top. -->
+  <g inkscape:groupmode="layer" id="layer-scan" inkscape:label="Scan (put the scanned PDF here, then lock)" sodipodi:insensitive="false" opacity="0.4" />
+
+  <g inkscape:groupmode="layer" id="layer-rooms" inkscape:label="Rooms (one outline per room)"
+     style="fill:#3d8bfd;fill-opacity:0.08;stroke:#3d8bfd;stroke-width:1;stroke-dasharray:4,3" />
+
+  <g inkscape:groupmode="layer" id="layer-walls" inkscape:label="Walls"
+     style="fill:none;stroke:#000000;stroke-width:4;stroke-linecap:square;stroke-linejoin:miter" />
+
+  <g inkscape:groupmode="layer" id="layer-doors" inkscape:label="Doors"
+     style="fill:none;stroke:#000000;stroke-width:1.5" />
+
+  <g inkscape:groupmode="layer" id="layer-labels" inkscape:label="Labels (room number / name, placed inside each room)"
+     style="font-family:Arial,Helvetica,sans-serif;font-size:18px;fill:#000000;text-anchor:middle" />
+
+  <g inkscape:groupmode="layer" id="layer-example" inkscape:label="EXAMPLE – delete this layer">
+    <rect x="100" y="100" width="300" height="200" style="fill:#3d8bfd;fill-opacity:0.08;stroke:#3d8bfd;stroke-width:1;stroke-dasharray:4,3" />
+    <path d="M 100,100 H 400 V 300 H 270 M 230,300 H 100 Z" style="fill:none;stroke:#000;stroke-width:4;stroke-linecap:square" />
+    <path d="M 230,300 A 40,40 0 0 1 270,300" style="fill:none;stroke:#000;stroke-width:1.5" />
+    <text x="250" y="205" style="font-family:Arial,Helvetica,sans-serif;font-size:18px;text-anchor:middle">E105</text>
+    <text x="250" y="230" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;text-anchor:middle;fill:#555">Mrs. Smith – 3rd grade</text>
+    <text x="100" y="340" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;fill:#999">Example: room outline (blue dashed, Rooms layer), walls (black, Walls layer) with a door gap and swing (Doors layer), label inside the room (Labels layer).</text>
+  </g>
+</svg>

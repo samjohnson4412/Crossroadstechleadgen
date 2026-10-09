@@ -36,6 +36,7 @@ export const algoDriver: IntegrationDriver = {
 
     async function call(path: string, body?: unknown) {
       const res = await fetch(`${base}/api${path}`, {
+        signal: AbortSignal.timeout(8000),
         method: body === undefined ? "GET" : "POST",
         headers: { Authorization: auth, "Content-Type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),

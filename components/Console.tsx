@@ -102,6 +102,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
         <button onClick={() => setModal({ kind: "cameras" })}>All cameras</button>
         <button onClick={() => setModal({ kind: "tag" })}>Tag person</button>
         <button className="btn-alert" onClick={() => setModal({ kind: "alert" })}>🚨 Alert</button>
+        <a className="button-link" href="/settings" title="Connection settings">⚙</a>
         <button className={state.lockdown ? "btn-primary" : "btn-danger"} onClick={() => setModal({ kind: "lockdown" })}>
           {state.lockdown ? "Lift lockdown" : "Lockdown"}
         </button>
