@@ -26,6 +26,13 @@ const cam = (externalId: string, name: string, x: number, y: number, heading: nu
   source: { integration: "cameras", externalId },
 });
 
+/** A camera on the second Blue Iris server. */
+const cam2 = (externalId: string, name: string, x: number, y: number, heading: number, covers: string[], fov = 70): CameraPlacement => ({
+  ...cam(externalId, name, x, y, heading, covers, fov),
+  id: `bi2-${externalId}`,
+  source: { integration: "cameras2", externalId },
+});
+
 const door = (id: string, name: string, x: number, y: number, between: [string, string], exterior = false): DoorPlacement => ({
   id,
   name,
@@ -272,6 +279,40 @@ export const cccSite: SiteConfig = {
             cam("WCCCAOfficeDrive", "WC CCA Office Drive 120", 262, 300, 160, ["o-drive"]),
             cam("WC1_South_Entry", "WC1 Preschool Entry 18", 482, 672, 135, ["o-south-entrance"]),
             cam("WC1SouthDrive", "WC1 Preschool Drive 10", 524, 712, 315, ["o-south-entrance"]),
+            // ---- Blue Iris server 2 ----
+            cam2("YC-Gym", "YC Gym", 219, 88, 180, ["y-gym"], 100),
+            cam2("YCGymC", "YC Gym Center", 219, 212, 0, ["y-gym"], 100),
+            cam2("YCGymNWCorner", "YC Gym NW Corner", 154, 89, 135, ["y-gym"], 90),
+            cam2("YC_Gym_Backstage", "YC Gym Backstage", 284, 89, 225, ["y-gym"]),
+            cam2("YCGymSoundBooth", "YC Gym Sound Booth", 284, 211, 315, ["y-gym"]),
+            cam2("YC_Lobby", "YC Lobby", 228, 250, 0, ["y-lobby"]),
+            cam2("YC_Entry", "YC Entryway", 205, 281, 45, ["y-lobby"]),
+            cam2("YCLTV", "YC Lobby TVs", 250, 224, 225, ["y-lobby"]),
+            cam2("CCAOffice", "CCA Office", 235, 330, 180, ["e-connector"]),
+            cam2("EB1PlayDoors", "EB1 Playground Doors 113", 105, 552, 180, ["o-playground"]),
+            cam2("PreEntry", "Preschool Entry Door", 500, 672, 0, ["o-south-entrance", "s-south-lobby"]),
+            cam2("WCNorthLobby", "WC North Lobby", 500, 305, 180, ["s-north-lobby"], 100),
+            cam2("WC_North_East", "WC North Lobby East 80", 640, 330, 270, ["s-north-lobby"]),
+            cam2("WC_North_Merch", "WC North Lobby Merch Counter", 600, 345, 0, ["s-north-lobby"]),
+            cam2("WC1_NL_Lockbox", "WC1 NL Lockbox", 460, 345, 0, ["s-north-lobby"], 50),
+            cam2("WCWestLToCafe", "WC West Lobby To Cafe 144", 370, 424, 0, ["s-west", "s-cafe"]),
+            cam2("WC-Cafe", "WC Cafe", 345, 372, 135, ["s-cafe"], 100),
+            cam2("WC-Cafe-Overflow", "WC Cafe Overflow", 412, 368, 225, ["s-cafe"]),
+            cam2("WCCafe_Registers", "WC Cafe Registers 116", 360, 382, 180, ["s-cafe"], 60),
+            cam2("WC-Cafe-Hallway", "WC Cafe Hallway", 340, 400, 90, ["s-cafe"]),
+            cam2("WCCafeHallway", "WCCafeHallway", 352, 410, 45, ["s-cafe"]),
+            cam2("WCCafEHall2", "WC Cafe Hallway 2", 372, 395, 315, ["s-cafe"]),
+            cam2("WC-Cafe-Kitchen", "WC Cafe Kitchen", 345, 362, 90, ["s-cafe"], 60),
+            cam2("WC-Cafe-Back-Kit", "WC Cafe Back Kitchen", 390, 362, 180, ["s-cafe"], 60),
+            cam2("WCCafe_Freezers", "WC Cafe Freezer 128", 380, 372, 270, ["s-cafe"], 50),
+            cam2("WCCafe_Rack", "WC Cafe Rack 129", 395, 380, 270, ["s-cafe"], 50),
+            cam2("Sanctuary", "Sanctuary Ceiling 17", 500, 415, 180, ["s-sanctuary"], 120),
+            cam2("WC_Sanct_PTZ_163", "WC Sanct PTZ 163", 420, 470, 90, ["s-sanctuary"], 90),
+            cam2("WC_Sanct_PTZ_167", "WC Sanct PTZ 167", 580, 470, 270, ["s-sanctuary"], 90),
+            cam2("Rear_Stage_L1", "Rear Stage Left 1", 446, 560, 45, ["s-stage"]),
+            cam2("Rear_Stage_L2", "Rear Stage Left 2", 500, 562, 0, ["s-stage"]),
+            cam2("Rear_Stage_L3", "Rear Stage Left 3", 554, 560, 315, ["s-stage"]),
+            cam2("SLTVs", "South Lobby TVs", 525, 600, 270, ["s-south-lobby"]),
           ],
           doors: [
             door("door-y-east", "Y Building East Door", 354, 180, ["y-east-hall", "o-north-parking"], true),
@@ -331,6 +372,16 @@ export const cccSite: SiteConfig = {
             // Sanctuary / Worship Center level 2 (WC2)
             cam("WC2_UprWestLobby", "WC2 Upper West Lobby 19", 322, 430, 90, ["s2-west"]),
             cam("WC2UpperSLobby", "WC2 Upper S Lobby", 500, 556, 0, ["s2-south-hall"]),
+            // ---- Blue Iris server 2 ----
+            cam2("E203", "EB E203", 60, 500, 135, ["e2-203"]),
+            cam2("WC2_Upper_West_L", "WC2 Upper West Lobby", 340, 440, 270, ["s2-west"]),
+            cam2("WC2_Upper_West_H", "WC2 Upper West Hall", 331, 330, 180, ["s2-west"]),
+            cam2("WC2_West_LobbyE", "WC2 West Lobby Elevator", 331, 520, 0, ["s2-west"]),
+            cam2("SC2_UP_Ea_Lb", "WC2 Upper South Lobby", 570, 540, 270, ["s2-south-hall"]),
+            cam2("WC2_S238_Hall_34", "WC2 S238 Hall 34", 470, 557, 0, ["s2-south-hall"]),
+            cam2("WC2_Up_East_Lob", "WC2 Upper East Lobby", 672, 430, 270, ["s2-east"]),
+            cam2("WC2_S232_Hall_37", "WC2 S232 Hall 37", 580, 476, 135, ["s2-east-rooms"]),
+            cam2("WC2_S232", "WC2 Middle School Corner", 650, 535, 315, ["s2-east-rooms"]),
           ],
           doors: [
             door("door-bridge-edu", "Skybridge (Education side)", 213, 480, ["e2-south-hall", "e2-bridge"]),

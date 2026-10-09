@@ -271,7 +271,9 @@ export class Runtime {
   streamInfo(cameraId: string): StreamInfo {
     const cam = this.graph.cameras.get(cameraId);
     if (!cam) return { kind: "unavailable", reason: "Unknown camera" };
-    const cams = this.integrations.get(cam.source.integration)?.instance.cameras;
+    const running = this.integrations.get(cam.source.integration);
+    if (running?.health.state === "unconfigured") return { kind: "unavailable", reason: `${running.config.name} isn't set up yet` };
+    const cams = running?.instance.cameras;
     if (!cams) return { kind: "unavailable", reason: `Integration ${cam.source.integration} has no camera capability` };
     return cams.streamInfo(cam.source.externalId, cam.id);
   }

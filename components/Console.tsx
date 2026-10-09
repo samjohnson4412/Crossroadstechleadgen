@@ -281,7 +281,7 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
     const cam = idx.cameras.get(selection.id)!;
     return (
       <div className="panel">
-        <EditableName key={cam.id} kind="camera" id={cam.id} name={cam.name} placeholder={cam.placeholder} />
+        <EditableName key={`name-${cam.id}`} kind="camera" id={cam.id} name={cam.name} placeholder={cam.placeholder} />
         {camTile(cam.id, true)}
         {error && <p className="error">{error}</p>}
         <div className="section-title">Nearby cameras</div>
@@ -295,7 +295,7 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
     const cams = [...new Set(door.between.flatMap((z) => graph.camerasInZone(z)))];
     return (
       <div className="panel">
-        <EditableName key={door.id} kind="door" id={door.id} name={door.name} placeholder={door.placeholder} />
+        <EditableName key={`name-${door.id}`} kind="door" id={door.id} name={door.name} placeholder={door.placeholder} />
         <p className="muted small">{door.between.map((z) => idx.zones.get(z)?.name).join(" ↔ ")}{door.exterior ? " · exterior" : ""}</p>
         <DoorControls door={door} status={state.doors[door.id]} />
         <div className="section-title">Cameras on this door</div>
@@ -308,7 +308,7 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
     const d = idx.displays.get(selection.id)!;
     return (
       <div className="panel">
-        <EditableName key={d.id} kind="display" id={d.id} name={d.name} />
+        <EditableName key={`name-${d.id}`} kind="display" id={d.id} name={d.name} />
         <p className="muted small">SMART Board in {idx.zones.get(d.zoneId)?.name}. Use “Message boards” to send to it.</p>
       </div>
     );
@@ -319,7 +319,7 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
   const doors = [...idx.doors.values()].filter((d) => d.between.includes(zone.id) && d.source);
   return (
     <div className="panel">
-      <EditableName key={zone.id} kind="zone" id={zone.id} name={zone.name} />
+      <EditableName key={`name-${zone.id}`} kind="zone" id={zone.id} name={zone.name} />
       {zone.building && <div className="building">{zone.building}</div>}
       {cams.length ? <div className="mini-grid single">{cams.map((c) => camTile(c))}</div> : <p className="muted small">No camera covers this area.</p>}
       {cams.length === 0 && (
