@@ -21,11 +21,16 @@ interface Props {
   badge?: ReactNode;
   footer?: ReactNode;
   emphasis?: boolean;
+  /**
+   * Full live video. Browsers allow only ~6 open connections per server and every live
+   * stream holds one, so only the main tile on screen is live; the rest refresh as snapshots.
+   */
+  live?: boolean;
   onClick?: () => void;
 }
 
 /** One live camera tile: real MJPEG via the server proxy, or the simulator's rendering. */
-export function CameraFeed({ camera, stream, zones, sim, badge, footer, emphasis, onClick }: Props) {
+export function CameraFeed({ camera, stream, zones, sim, badge, footer, emphasis, live, onClick }: Props) {
   return (
     <div className={`feed${emphasis ? " feed-emphasis" : ""}`} onClick={onClick}>
       <div className="feed-video">
@@ -34,7 +39,11 @@ export function CameraFeed({ camera, stream, zones, sim, badge, footer, emphasis
         ) : stream.kind === "simulated" ? (
           <SimFeed camera={camera} zones={zones} actors={sim ?? []} />
         ) : stream.kind === "mjpeg" ? (
-          <LiveImage streamUrl={stream.url} snapshotUrl={`/api/cameras/${camera.id}/snapshot`} alt={camera.name} />
+          live ? (
+            <LiveImage streamUrl={stream.url} snapshotUrl={`/api/cameras/${camera.id}/snapshot`} alt={camera.name} />
+          ) : (
+            <SnapshotImage url={`/api/cameras/${camera.id}/snapshot?w=480`} alt={camera.name} />
+          )
         ) : (
           <div className="feed-empty">{stream.kind.toUpperCase()} playback not wired yet</div>
         )}
@@ -149,24 +158,52 @@ function SimFeed({ camera, zones, actors }: { camera: CameraPlacement; zones: Ma
 }
 
 /**
- * Live MJPEG; if the camera server refuses the stream, fall back to a snapshot every second,
- * and say so if neither works.
+ * Live MJPEG; if the camera server refuses the stream, fall back to refreshing snapshots.
  */
 function LiveImage({ streamUrl, snapshotUrl, alt }: { streamUrl: string; snapshotUrl: string; alt: string }) {
-  const [mode, setMode] = useState<"stream" | "snapshot" | "failed">("stream");
-  const [tick, setTick] = useState(0);
+  const [failed, setFailed] = useState(false);
+  if (failed) return <SnapshotImage url={snapshotUrl} alt={alt} intervalMs={500} />;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={streamUrl} alt={alt} onError={() => setFailed(true)} />;
+}
+
+/**
+ * Refreshing still image. Loads the next frame only after the current one arrives (never piles up
+ * requests on a slow camera), and swaps frames only once loaded so the tile never flashes blank.
+ */
+function SnapshotImage({ url, alt, intervalMs = 1200 }: { url: string; alt: string; intervalMs?: number }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [error, setError] = useState(false);
   useEffect(() => {
-    if (mode !== "snapshot") return;
-    const t = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(t);
-  }, [mode]);
-  if (mode === "failed") return <div className="feed-empty">Camera server isn&apos;t sending video for this camera</div>;
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={mode === "stream" ? streamUrl : `${snapshotUrl}?t=${tick}`}
-      alt={alt}
-      onError={() => setMode((m) => (m === "stream" ? "snapshot" : m === "snapshot" && tick === 0 ? "failed" : m))}
-    />
-  );
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let failures = 0;
+    const load = () => {
+      const img = new Image();
+      const next = `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
+      img.onload = () => {
+        if (cancelled) return;
+        failures = 0;
+        setError(false);
+        setSrc(next);
+        timer = setTimeout(load, intervalMs);
+      };
+      img.onerror = () => {
+        if (cancelled) return;
+        failures++;
+        if (failures >= 3) setError(true);
+        timer = setTimeout(load, Math.min(10_000, intervalMs * 2 ** failures));
+      };
+      img.src = next;
+    };
+    load();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [url, intervalMs]);
+  if (error && !src) return <div className="feed-empty">Camera server isn&apos;t sending video for this camera</div>;
+  if (!src) return <div className="feed-empty">Loading…</div>;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={alt} />;
 }

@@ -244,6 +244,7 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
         zones={idx.zones}
         sim={state.sim}
         emphasis={big}
+        live={big}
         onClick={big ? undefined : () => onSelect({ kind: "camera", id: cameraId })}
         footer={
           <>

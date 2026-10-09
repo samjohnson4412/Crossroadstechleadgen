@@ -320,11 +320,11 @@ export class Runtime {
     return cams.proxyStream(route.cam.source.externalId, signal);
   }
 
-  async cameraSnapshot(cameraId: string): Promise<Response> {
+  async cameraSnapshot(cameraId: string, width?: number): Promise<Response> {
     const route = this.cameraRoute(cameraId);
     const cams = route?.running?.instance.cameras;
     if (!route || !cams?.snapshot) return new Response("No snapshot", { status: 404 });
-    return cams.snapshot(route.cam.source.externalId);
+    return cams.snapshot(route.cam.source.externalId, width);
   }
 
   async doorAction(doorId: string, action: DoorAction, actor: Actor) {

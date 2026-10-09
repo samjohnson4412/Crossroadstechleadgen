@@ -36,7 +36,8 @@ export interface CameraCapability {
   streamInfo(externalId: string, cameraId: string): StreamInfo;
   /** Server-side proxy for MJPEG/snapshots so vendor credentials never reach the browser. */
   proxyStream?(externalId: string, signal: AbortSignal): Promise<Response>;
-  snapshot?(externalId: string): Promise<Response>;
+  /** A single still image; `width` asks the server to scale it down (for small tiles). */
+  snapshot?(externalId: string, width?: number): Promise<Response>;
 }
 
 // ---------- access control ----------

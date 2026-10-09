@@ -114,6 +114,7 @@ export function FollowView({ track, state, idx, graph, color, onExit }: Props) {
               zones={zones}
               sim={state.sim}
               emphasis
+              live
               badge={preview ? "PREVIEW" : "LAST SEEN"}
               footer={
                 preview ? (

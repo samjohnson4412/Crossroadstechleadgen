@@ -159,8 +159,9 @@ export const blueIrisDriver: IntegrationDriver = {
           const id = encodeURIComponent(externalId);
           return proxy([`/mjpg/${id}/video.mjpg`, `/mjpg/${id}`], signal);
         },
-        snapshot(externalId) {
-          return proxy([`/image/${encodeURIComponent(externalId)}`]);
+        snapshot(externalId, width) {
+          const scale = width ? `?w=${Math.round(width)}&q=70` : "";
+          return proxy([`/image/${encodeURIComponent(externalId)}${scale}`]);
         },
       },
       diagnose,
