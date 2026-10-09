@@ -9,11 +9,11 @@ import { lastSighting } from "@/lib/tracking/tracker";
 import { CameraFeed } from "./CameraFeed";
 import { MapEditor } from "./MapEditor";
 import { MapView, type Selection } from "./MapView";
-import { AlertDialog, BroadcastDialog, describeDoor, DoorControls, EditableName, EventFeed, indexSite, IntegrationsDialog, LockdownDialog, TagDialog, useAction, type SiteIndex } from "./Panels";
+import { AlertDialog, AllCamerasDialog, BroadcastDialog, describeDoor, DoorControls, EditableName, EventFeed, indexSite, IntegrationsDialog, LockdownDialog, TagDialog, useAction, type SiteIndex } from "./Panels";
 import { ago, buildOverlay, FollowView, trackColor, TrackSide, useNow } from "./TrackView";
 import { send, useLive } from "./useLive";
 
-type ModalKind = { kind: "broadcast" } | { kind: "lockdown" } | { kind: "alert" } | { kind: "integrations" } | { kind: "tag"; cameraId?: string } | null;
+type ModalKind = { kind: "cameras" } | { kind: "broadcast" } | { kind: "lockdown" } | { kind: "alert" } | { kind: "integrations" } | { kind: "tag"; cameraId?: string } | null;
 
 export function Console() {
   const { site, state, connected } = useLive();
@@ -98,6 +98,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
           <span className={`conn${connected ? " up" : ""}`} />
           {unhealthy ? `${unhealthy} integration(s) offline` : sims ? `${sims} simulated` : "All systems OK"}
         </button>
+        <button onClick={() => setModal({ kind: "cameras" })}>All cameras</button>
         <button onClick={() => setModal({ kind: "tag" })}>Tag person</button>
         <button onClick={() => setModal({ kind: "broadcast" })}>Message boards</button>
         <button className="btn-warn" onClick={() => setModal({ kind: "alert" })}>Raise alert</button>
@@ -118,7 +119,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
             initial={{ buildings: site.buildings, passages: site.passages }}
             floorId={floorId}
             showBackground={showBackground}
-            cameraIntegration={state.integrations.find((i) => i.capabilities.includes("cameras"))?.id}
+            cameraIntegrations={state.integrations.filter((i) => i.capabilities.includes("cameras") && i.health.state !== "unconfigured").map((i) => ({ id: i.id, name: i.name }))}
             doorIntegration={state.integrations.find((i) => i.capabilities.includes("access-control"))?.id}
             onDone={() => setEditing(false)}
           />
@@ -168,6 +169,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
       </main>
       )}
 
+      {modal?.kind === "cameras" && <AllCamerasDialog state={state} idx={idx} onClose={() => setModal(null)} onShowOnMap={(id) => (setEditing(false), setFollowId(null), select({ kind: "camera", id }))} />}
       {modal?.kind === "broadcast" && <BroadcastDialog idx={idx} onClose={() => setModal(null)} />}
       {modal?.kind === "lockdown" && <LockdownDialog active={state.lockdown} onClose={() => setModal(null)} />}
       {modal?.kind === "alert" && <AlertDialog onClose={() => setModal(null)} />}

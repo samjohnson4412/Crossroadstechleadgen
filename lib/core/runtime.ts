@@ -86,6 +86,17 @@ export class Runtime {
       if (!driver) throw new Error(`Integration ${config.id}: unknown driver "${config.driver}"`);
       const settings = resolveSettings(config);
       const missing = driver.requiredSettings.filter((k) => settings[k] === undefined || settings[k] === "");
+      if (config.optional && missing.length > 0 && !forceSim) {
+        // Not set up yet: list it (so it's visible in the integrations window) but don't run or simulate it.
+        this.integrations.set(config.id, {
+          config,
+          driver,
+          simulated: false,
+          instance: { start: async () => {}, stop: async () => {} },
+          health: { state: "unconfigured", detail: `Not set up — fill in ${missing.join(", ")}`, checkedAt: new Date().toISOString() },
+        });
+        continue;
+      }
       const simulated = forceSim || missing.length > 0;
       const running = { config, driver, simulated, health: { state: "unconfigured", checkedAt: new Date().toISOString() } } as RunningIntegration;
       const ctx = {

@@ -31,3 +31,9 @@ WEBHOOK_TOKEN=<any long random string>   # only needed for step 6
 
 Check: the top-bar status pill → Blue Iris should say **ok**. `http://localhost:3100/api/integrations/cameras/devices`
 lists the cameras Blue Iris reports.
+
+## A second Blue Iris server
+
+Fill in `BLUEIRIS2_URL`, `BLUEIRIS2_USER`, `BLUEIRIS2_PASSWORD` in `.env.local` and restart. Until then it shows
+as "not set up" in the integrations window (it is not simulated). Its cameras then appear in **All cameras** and in
+Edit map's "not on the map yet" list alongside the first server's.

@@ -113,6 +113,8 @@ export interface IntegrationConfig {
   driver: string;
   name: string;
   settings: Record<string, SettingValue>;
+  /** Optional systems stay switched off (not simulated) until their settings are filled in. */
+  optional?: boolean;
 }
 
 export interface SiteConfig {

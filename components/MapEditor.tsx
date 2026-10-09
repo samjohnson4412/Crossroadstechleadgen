@@ -34,7 +34,8 @@ interface Props {
   initial: SiteLayout;
   floorId: string;
   showBackground: boolean;
-  cameraIntegration?: string;
+  /** Camera systems (e.g. two Blue Iris servers) whose cameras can be placed. */
+  cameraIntegrations: { id: string; name: string }[];
   doorIntegration?: string;
   onDone: () => void;
 }
@@ -43,14 +44,19 @@ interface Props {
  * Map editor: draw and reshape rooms, place cameras and doors, set which rooms
  * connect. Works on a draft; nothing changes for other consoles until Save.
  */
-export function MapEditor({ initial, floorId, showBackground, cameraIntegration, doorIntegration, onDone }: Props) {
+export function MapEditor({ initial, floorId, showBackground, cameraIntegrations, doorIntegration, onDone }: Props) {
+  const cameraIntegration = cameraIntegrations[0]?.id;
+  const serverName = (id: string) => cameraIntegrations.find((c) => c.id === id)?.name ?? id;
   const [draft, setDraft] = useState<SiteLayout>(() => structuredClone(initial));
   const [history, setHistory] = useState<SiteLayout[]>([]);
   const [tool, setTool] = useState<Tool>("select");
   const [sel, setSel] = useState<Sel>(null);
   const [shapePoints, setShapePoints] = useState<Point[]>([]);
   const [hint, setHint] = useState<string | null>(null);
-  const [biCameras, setBiCameras] = useState<{ externalId: string; name: string }[]>([]);
+  const [biCameras, setBiCameras] = useState<{ integration: string; externalId: string; name: string; online?: boolean }[]>([]);
+  /** A Blue Iris camera picked from the "not on the map" list, waiting to be clicked onto the map. */
+  const [pendingCam, setPendingCam] = useState<{ integration: string; externalId: string; name: string } | null>(null);
+  const [camFilter, setCamFilter] = useState("");
   const [uniDoors, setUniDoors] = useState<{ externalId: string; name: string }[]>([]);
   const dragRef = useRef<Drag | null>(null);
   /** The click that ends a draw/drag/placement must not also clear the selection. */
@@ -66,9 +72,17 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegration,
   const k = floor.width / 1000;
 
   useEffect(() => {
-    if (cameraIntegration) fetch(`/api/integrations/${cameraIntegration}/devices`).then((r) => r.json()).then((d) => setBiCameras(d.cameras ?? [])).catch(() => {});
+    Promise.all(
+      cameraIntegrations.map((ci) =>
+        fetch(`/api/integrations/${ci.id}/devices`)
+          .then((r) => r.json())
+          .then((d) => ((d.cameras ?? []) as { externalId: string; name: string; online?: boolean }[]).map((c) => ({ ...c, integration: ci.id })))
+          .catch(() => []),
+      ),
+    ).then((lists) => setBiCameras(lists.flat()));
     if (doorIntegration) fetch(`/api/integrations/${doorIntegration}/devices`).then((r) => r.json()).then((d) => setUniDoors(d.doors ?? [])).catch(() => {});
-  }, [cameraIntegration, doorIntegration]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraIntegrations.map((c) => c.id).join(","), doorIntegration]);
 
   // ---------- draft helpers ----------
 
@@ -174,17 +188,18 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegration,
       const id = rid("cam");
       const cam: CameraPlacement = {
         id,
-        name: z ? `${z.name} camera` : "New camera",
+        name: pendingCam?.name ?? (z ? `${z.name} camera` : "New camera"),
         position: { x: Math.round(p.x), y: Math.round(p.y) },
         heading: 0,
         fov: 70,
         covers: z ? [z.id] : [],
-        source: { integration: cameraIntegration ?? "cameras", externalId: id },
-        placeholder: true,
+        source: { integration: pendingCam?.integration ?? cameraIntegration ?? "cameras", externalId: pendingCam?.externalId ?? id },
+        placeholder: pendingCam ? undefined : true,
       };
       commit((d) => floorOf(d).cameras.push(cam));
       setSel({ kind: "camera", id });
       setTool("select");
+      setPendingCam(null);
     } else if (tool === "door") {
       const near = floor.zones
         .map((z) => ({ z, d: pointInPolygon(p, z.polygon) ? 0 : distanceToOutline(p, z.polygon).distance }))
@@ -279,6 +294,8 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegration,
       onDone();
     });
 
+  const placedIds = new Set(floors.flatMap((f) => f.cameras.map((c) => `${c.source.integration}/${c.source.externalId}`)));
+  const unplaced = biCameras.filter((c) => !placedIds.has(`${c.integration}/${c.externalId}`));
   const selZone = sel?.kind === "zone" ? floor.zones.find((z) => z.id === sel.id) : undefined;
   const selCam = sel?.kind === "camera" ? floor.cameras.find((c) => c.id === sel.id) : undefined;
   const selDoor = sel?.kind === "door" ? floor.doors.find((d) => d.id === sel.id) : undefined;
@@ -298,7 +315,7 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegration,
       <section className="stage">
         <div className="editor-bar">
           {TOOLS.map((t) => (
-            <button key={t.id} className={tool === t.id ? "on" : ""} onClick={() => (setTool(t.id), setShapePoints([]), setHint(null))}>
+            <button key={t.id} className={tool === t.id ? "on" : ""} onClick={() => (setTool(t.id), setShapePoints([]), setHint(null), setPendingCam(null))}>
               {t.label}
             </button>
           ))}
@@ -424,6 +441,26 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegration,
               <li>Delete key removes the selected item. Ctrl+Z undoes.</li>
             </ul>
             <p className="muted small">{floor.zones.length} rooms · {floor.cameras.length} cameras · {floor.doors.length} doors on this level</p>
+            {unplaced.length > 0 && (
+              <>
+                <div className="section-title">Blue Iris cameras not on the map yet <span className="count">{unplaced.length}</span></div>
+                <p className="muted small">Click one, then click where it&apos;s mounted.</p>
+                <input placeholder="Filter…" value={camFilter} onChange={(e) => setCamFilter(e.target.value)} />
+                <ul className="unplaced">
+                  {unplaced
+                    .filter((c) => !camFilter || `${c.name} ${c.externalId}`.toLowerCase().includes(camFilter.toLowerCase()))
+                    .map((c) => (
+                      <li key={`${c.integration}/${c.externalId}`}>
+                        <button className={pendingCam?.externalId === c.externalId && pendingCam.integration === c.integration ? "on" : ""} onClick={() => (setPendingCam(c), setTool("camera"), setHint(`Click on the map where "${c.name}" is mounted.`))}>
+                          {c.name}
+                          {cameraIntegrations.length > 1 && <span className="muted small"> · {serverName(c.integration)}</span>}
+                          {c.online === false && <span className="muted small"> · offline</span>}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </>
+            )}
           </div>
         )}
 
@@ -451,6 +488,13 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegration,
           <div className="panel" key={selCam.id}>
             <h3>Camera</h3>
             <label>Name<input value={selCam.name} onChange={(e) => commit((d) => (findCam(d, selCam.id)!.name = e.target.value), false)} /></label>
+            {cameraIntegrations.length > 1 && (
+              <label>Camera server
+                <select value={selCam.source.integration} onChange={(e) => commit((d) => (findCam(d, selCam.id)!.source.integration = e.target.value))}>
+                  {cameraIntegrations.map((ci) => <option key={ci.id} value={ci.id}>{ci.name}</option>)}
+                </select>
+              </label>
+            )}
             <label>Blue Iris camera (short name)
               <input
                 list="bi-cams"
@@ -460,12 +504,12 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegration,
                   commit((d) => {
                     const c = findCam(d, selCam.id)!;
                     const v = e.target.value.trim();
-                    c.source = { integration: cameraIntegration ?? c.source.integration, externalId: v || c.id };
+                    c.source = { integration: c.source.integration, externalId: v || c.id };
                     c.placeholder = !v;
                   }, false)
                 }
               />
-              <datalist id="bi-cams">{biCameras.map((c) => <option key={c.externalId} value={c.externalId}>{c.name}</option>)}</datalist>
+              <datalist id="bi-cams">{biCameras.filter((c) => c.integration === selCam.source.integration).map((c) => <option key={c.externalId} value={c.externalId}>{c.name}</option>)}</datalist>
             </label>
             <label>Facing: {selCam.heading ?? 0}°
               <input type="range" min={0} max={359} value={selCam.heading ?? 0} onChange={(e) => commit((d) => (findCam(d, selCam.id)!.heading = Number(e.target.value)), false)} />

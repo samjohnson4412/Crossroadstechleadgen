@@ -8,20 +8,22 @@ import { poly, rect, type CameraPlacement, type DoorPlacement, type SiteConfig }
  * Room shapes are traced from the plans and are approximate. Room names can be
  * changed from the console (they're saved in data/site-overrides.json).
  *
- * Cameras and controlled doors marked `placeholder` are guesses so the console
- * is usable before CCC's real device lists arrive — replace them with the real
- * Blue Iris cameras and UniFi Access doors.
+ * Cameras are CCC's Blue Iris cameras, placed from their names (YC = Y Building,
+ * EB1/EB2 = Education levels, WC1/WC2 = Worship Center / Sanctuary levels). Cameras
+ * whose location isn't clear from the name are left off the map; place them in
+ * the console's Edit map. Controlled doors are still placeholders until the
+ * UniFi Access door list arrives.
  */
 
-const cam = (id: string, name: string, x: number, y: number, heading: number, covers: string[], fov = 70): CameraPlacement => ({
-  id,
+/** A Blue Iris camera, by its short name. Positions are best guesses from the camera names — drag to fix in Edit map. */
+const cam = (externalId: string, name: string, x: number, y: number, heading: number, covers: string[], fov = 70): CameraPlacement => ({
+  id: `bi-${externalId}`,
   name,
   position: { x, y },
   heading,
   fov,
   covers,
-  source: { integration: "cameras", externalId: id },
-  placeholder: true,
+  source: { integration: "cameras", externalId },
 });
 
 const door = (id: string, name: string, x: number, y: number, between: [string, string], exterior = false): DoorPlacement => ({
@@ -47,6 +49,13 @@ export const cccSite: SiteConfig = {
       driver: "blueiris",
       name: "Blue Iris",
       settings: { url: { env: "BLUEIRIS_URL" }, user: { env: "BLUEIRIS_USER" }, password: { env: "BLUEIRIS_PASSWORD" } },
+    },
+    {
+      id: "cameras2",
+      driver: "blueiris",
+      name: "Blue Iris (server 2)",
+      optional: true,
+      settings: { url: { env: "BLUEIRIS2_URL" }, user: { env: "BLUEIRIS2_USER" }, password: { env: "BLUEIRIS2_PASSWORD" } },
     },
     {
       id: "doors",
@@ -225,23 +234,36 @@ export const cccSite: SiteConfig = {
             { id: "o-playground", name: "Playground", kind: "outdoor", polygon: rect(60, 555, 200, 160) },
           ],
           cameras: [
-            cam("cam-gym", "Gym", 155, 90, 135, ["y-gym"], 90),
-            cam("cam-y-lobby", "Y Lobby", 204, 281, 45, ["y-lobby"]),
-            cam("cam-y-cafe", "Y Café", 350, 281, 315, ["y-cafe"]),
-            cam("cam-y-east", "Y East Hall", 350, 114, 180, ["y-east-hall"]),
-            cam("cam-e-connector", "Education Connector", 250, 293, 200, ["e-connector"]),
-            cam("cam-e-north", "Education North Hall", 103, 352, 90, ["e-north-hall"]),
-            cam("cam-e-west", "Education West Hall", 115, 363, 180, ["e-west-hall"]),
-            cam("cam-e-east", "Education East Hall", 207, 363, 180, ["e-east-hall"]),
-            cam("cam-e-mid", "Education Center Hall", 212, 463, 270, ["e-mid-hall"]),
-            cam("cam-drive", "West Drive", 300, 296, 180, ["o-drive"]),
-            cam("cam-canopy", "Sanctuary Drop-off", 512, 240, 180, ["o-north-canopy"]),
-            cam("cam-s-north", "Sanctuary North Lobby", 336, 305, 120, ["s-north-lobby"]),
-            cam("cam-s-west", "West Concourse", 336, 556, 0, ["s-west"]),
-            cam("cam-s-east", "East Concourse", 664, 556, 0, ["s-east"]),
-            cam("cam-sanctuary", "Sanctuary", 500, 518, 0, ["s-sanctuary"], 100),
-            cam("cam-s-south", "South Lobby", 500, 664, 0, ["s-south-lobby"]),
-            cam("cam-parking", "North Parking", 696, 232, 300, ["o-north-parking"], 90),
+            // Y Building (YC)
+            cam("YC_Gym", "YC Gym 07", 219, 150, 0, ["y-gym"], 110),
+            cam("YC_Gym_East", "YC Gym Facing East", 156, 150, 90, ["y-gym"], 90),
+            cam("YC_Gym_West", "YC Gym Facing West", 282, 150, 270, ["y-gym"], 90),
+            cam("YC_Gym_Lobby", "YC Gym Lobby 94", 208, 222, 135, ["y-lobby"]),
+            cam("YC_Entryway", "YC Entryway 15", 247, 280, 315, ["y-lobby"]),
+            // Education level 1 (EB1)
+            cam("EB1_Acct_Halls", "EB1 Accounting Hallways 44", 104, 352, 90, ["e-north-hall"]),
+            cam("EB1_FacilitiesOf", "EB1 Facilities Office 42", 54, 311, 135, ["e-offices"]),
+            cam("EB1FacilOffice", "Facilities Office", 95, 311, 225, ["e-offices"]),
+            cam("EB1Playground_62", "EB1 Playground 62", 68, 562, 135, ["o-playground"], 90),
+            cam("Playscape", "Playscape", 252, 562, 225, ["o-playground"], 90),
+            // Sanctuary / Worship Center level 1 (WC1)
+            cam("WC1_NL_Center", "WC1 North Lobby Center 82", 500, 352, 0, ["s-north-lobby"], 100),
+            cam("WC1_NL_NW", "WC1 North Lobby NW 12", 338, 305, 120, ["s-north-lobby"]),
+            cam("WC1_NL_NE", "WC1 North Lobby NE 110", 662, 305, 240, ["s-north-lobby"]),
+            cam("WC1_NL_NewMemHal", "WC1 NL New Members Hallway 77", 420, 330, 90, ["s-north-lobby"]),
+            cam("WC1_Merch_Hall", "WC1 North Lobby Merch Booth Hall 67", 580, 330, 270, ["s-north-lobby"]),
+            cam("WC1_West_Lobby", "WC West Lobby 11", 340, 470, 90, ["s-west"]),
+            cam("WC1_WestLobby", "WC1 West Lobby2 114", 372, 380, 180, ["s-west"]),
+            cam("WC1_East_Lobby", "WC1 East Lobby", 660, 470, 270, ["s-east"]),
+            cam("WC1_SL_CENTER", "WC1 South Lobby Center 84", 500, 575, 180, ["s-south-lobby"]),
+            cam("WC1_SL_Ceiling", "WC1 South Lobby Ceiling 22", 500, 640, 0, ["s-south-lobby"]),
+            cam("WC2_SanctCeiling", "Sanctuary Rear Ceiling 26", 500, 365, 180, ["s-sanctuary"], 110),
+            // Outside
+            cam("WC1_WestLobby_NW_Out", "WC1 West Lobby NW Outside 74", 322, 380, 270, ["o-drive"]),
+            cam("WC1WestLobbyOut", "WC1 West Lobby Outside SW 75", 322, 455, 270, ["o-drive"]),
+            cam("WCCCAOfficeDrive", "WC CCA Office Drive 120", 262, 300, 160, ["o-drive"]),
+            cam("WC1_South_Entry", "WC1 Preschool Entry 18", 482, 672, 135, ["o-south-entrance"]),
+            cam("WC1SouthDrive", "WC1 Preschool Drive 10", 524, 712, 315, ["o-south-entrance"]),
           ],
           doors: [
             door("door-y-east", "Y Building East Door", 354, 180, ["y-east-hall", "o-north-parking"], true),
@@ -293,12 +315,14 @@ export const cccSite: SiteConfig = {
             { id: "s2-se", name: "S228 / S233/235", kind: "room", building: SAN, polygon: rect(598, 540, 79, 115) },
           ],
           cameras: [
-            cam("cam-e2-west", "Education Upper West Hall", 96, 368, 180, ["e2-west-hall"]),
-            cam("cam-e2-south", "Education Upper South Hall", 210, 478, 270, ["e2-south-hall"]),
-            cam("cam-bridge", "Skybridge", 306, 480, 270, ["e2-bridge"]),
-            cam("cam-balcony", "Balcony", 500, 324, 180, ["s2-balcony"], 100),
-            cam("cam-s2-west", "Upper West Concourse", 322, 322, 180, ["s2-west"]),
-            cam("cam-s2-south", "Upper South Hall", 430, 540, 90, ["s2-south-hall"]),
+            // Education level 2 (EB2)
+            cam("EB2_Kitchen_Hall", "EB2 Kitchen Corner Hallways 59", 96, 368, 180, ["e2-west-hall"]),
+            cam("EB2_HSHall", "EB2 HS Hall & Breezeway", 205, 478, 270, ["e2-south-hall", "e2-bridge"]),
+            cam("EB2_Restrooms", "EB2_Restrooms_50", 130, 473, 180, ["e2-south-hall"]),
+            cam("EB2_Upper_SW", "EB2 Upper SW Entrance 85", 52, 478, 90, ["e2-south-hall"]),
+            // Sanctuary / Worship Center level 2 (WC2)
+            cam("WC2_UprWestLobby", "WC2 Upper West Lobby 19", 322, 430, 90, ["s2-west"]),
+            cam("WC2UpperSLobby", "WC2 Upper S Lobby", 500, 556, 0, ["s2-south-hall"]),
           ],
           doors: [
             door("door-bridge-edu", "Skybridge (Education side)", 213, 480, ["e2-south-hall", "e2-bridge"]),

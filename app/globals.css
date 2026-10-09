@@ -213,3 +213,13 @@ g.draw-preview circle.first { fill: #ffb703; }
 input[type="range"] { padding: 0; }
 button.on-muted { color: var(--muted); }
 .map.editor { cursor: default; }
+.unplaced { list-style: none; padding: 0; margin: 8px 0 0; max-height: 45vh; overflow-y: auto; }
+.unplaced li button { width: 100%; text-align: left; margin-bottom: 4px; white-space: normal; }
+.unplaced li button.on { background: var(--accent); border-color: var(--accent); color: white; }
+.all-cams { list-style: none; padding: 0; margin: 8px 0 0; max-height: 50vh; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.all-cams button { width: 100%; text-align: left; white-space: normal; display: flex; align-items: center; gap: 6px; }
+.all-cams button.on { border-color: var(--accent); }
+.all-cams .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); flex: none; }
+.all-cams .dot.up { background: var(--ok); }
+.all-cams-live { margin-bottom: 10px; }
+.modal:has(.all-cams) { width: min(760px, 100%); }

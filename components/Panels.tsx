@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SecurityEvent } from "@/lib/core/events";
 import type { LiveState } from "@/lib/core/live";
 import type { PublicSite, Zone, CameraPlacement, DoorPlacement, DisplayPlacement } from "@/lib/core/site";
@@ -287,5 +287,82 @@ export function EditableName({ kind, id, name, placeholder }: { kind: "zone" | "
       </div>
       {error && <p className="error">{error}</p>}
     </>
+  );
+}
+
+/** Browse every camera the camera systems report — including ones not on the map — and watch one live. */
+export function AllCamerasDialog({ state, idx, onClose, onShowOnMap }: { state: LiveState; idx: SiteIndex; onClose: () => void; onShowOnMap: (cameraId: string) => void }) {
+  const systems = state.integrations.filter((i) => i.capabilities.includes("cameras") && i.health.state !== "unconfigured");
+  type Cam = { integration: string; externalId: string; name: string; online: boolean };
+  const [cams, setCams] = useState<Cam[] | null>(null);
+  const [filter, setFilter] = useState("");
+  const [watching, setWatching] = useState<Cam | null>(null);
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
+  const systemKey = systems.map((s) => s.id).join(",");
+
+  useEffect(() => {
+    const errors: string[] = [];
+    Promise.all(
+      systems.map((sys) =>
+        fetch(`/api/integrations/${sys.id}/devices`)
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.error) errors.push(`${sys.name}: ${d.error}`);
+            return ((d.cameras ?? []) as Omit<Cam, "integration">[]).map((c) => ({ ...c, integration: sys.id }));
+          })
+          .catch((e) => (errors.push(`${sys.name}: ${e}`), [] as Cam[])),
+      ),
+    ).then((lists) => {
+      setCams(lists.flat());
+      setLoadErrors(errors);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [systemKey]);
+
+  const sysOf = (id: string) => systems.find((s) => s.id === id);
+  const onMap = new Map([...idx.cameras.values()].map((c) => [`${c.source.integration}/${c.source.externalId}`, c.id]));
+  const keyOf = (c: Cam) => `${c.integration}/${c.externalId}`;
+  const shown = (cams ?? []).filter((c) => !filter || `${c.name} ${c.externalId}`.toLowerCase().includes(filter.toLowerCase()));
+
+  return (
+    <Modal title={`All cameras${cams ? ` (${cams.length})` : ""}`} onClose={onClose}>
+      {systems.length === 0 && <p className="muted">No camera system configured.</p>}
+      {loadErrors.map((e) => <p key={e} className="error">{e}</p>)}
+      {watching && (
+        <div className="feed feed-emphasis all-cams-live">
+          <div className="feed-video">
+            {sysOf(watching.integration)?.simulated ? (
+              <div className="feed-empty">Simulator — connect Blue Iris to see live video.</div>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={`/api/integrations/${watching.integration}/cameras/${encodeURIComponent(watching.externalId)}/stream`} alt={watching.name} />
+            )}
+            <div className="feed-label"><span className="live-dot" /> {watching.name}</div>
+          </div>
+          <div className="feed-footer">
+            {onMap.has(keyOf(watching)) ? (
+              <button onClick={() => (onShowOnMap(onMap.get(keyOf(watching))!), onClose())}>Show on map</button>
+            ) : (
+              <span className="muted small">Not on the map yet — place it in ✎ Edit map.</span>
+            )}
+            <button onClick={() => setWatching(null)}>Close video</button>
+          </div>
+        </div>
+      )}
+      <input placeholder="Search cameras…" value={filter} onChange={(e) => setFilter(e.target.value)} autoFocus />
+      {!cams && systems.length > 0 && <p className="muted small">Loading…</p>}
+      <ul className="all-cams">
+        {shown.map((c) => (
+          <li key={keyOf(c)}>
+            <button className={watching && keyOf(watching) === keyOf(c) ? "on" : ""} onClick={() => setWatching(c)}>
+              <span className={`dot ${c.online ? "up" : ""}`} />
+              {c.name}
+              {systems.length > 1 && <span className="muted small"> · {sysOf(c.integration)?.name}</span>}
+              {onMap.has(keyOf(c)) ? <span className="muted small"> · on map</span> : null}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Modal>
   );
 }
