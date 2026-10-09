@@ -301,7 +301,11 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
       <div className="panel">
         <EditableName key={`name-${door.id}`} kind="door" id={door.id} name={door.name} placeholder={door.placeholder} />
         <p className="muted small">{door.between.map((z) => idx.zones.get(z)?.name).join(" ↔ ")}{door.exterior ? " · exterior" : ""}</p>
-        <DoorControls door={door} status={state.doors[door.id]} />
+        <DoorControls
+          door={door}
+          status={state.doors[door.id]}
+          controllable={!!state.integrations.find((i) => i.id === door.source?.integration)?.capabilities.includes("access-control")}
+        />
         <div className="section-title">Cameras on this door</div>
         <div className="mini-grid">{cams.map((c) => camTile(c))}</div>
       </div>

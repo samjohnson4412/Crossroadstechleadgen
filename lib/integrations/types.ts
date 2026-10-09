@@ -10,7 +10,7 @@ import type { IntegrationConfig } from "../core/site.ts";
  * Adding a vendor = writing one driver file and registering it in registry.ts.
  */
 
-export type Capability = "cameras" | "access-control" | "alerts" | "messaging" | "paging";
+export type Capability = "cameras" | "access-control" | "alerts" | "messaging" | "paging" | "access-events";
 
 export type HealthState = "ok" | "connecting" | "degraded" | "offline" | "simulated" | "unconfigured";
 

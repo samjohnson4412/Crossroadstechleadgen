@@ -17,6 +17,7 @@ export interface Appearance {
 export type EventType =
   | "access.granted"
   | "access.denied"
+  | "access.other"
   | "door.opened"
   | "door.closed"
   | "door.forced"

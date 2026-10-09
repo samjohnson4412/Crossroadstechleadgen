@@ -20,6 +20,14 @@ export const DRIVER_FIELDS: Record<string, Record<string, FieldInfo>> = {
     token: { label: "API token", type: "password", help: "UniFi Access → Settings → General → Advanced → API Token." },
     insecureTls: { label: "Accept self-signed certificate", type: "boolean", help: "Usually on for an on-site controller." },
   },
+  identipass: {
+    listenPort: { label: "Printer feed port", placeholder: "9100", help: "IDentiPASS's transaction printer is pointed at this console on this TCP port (raw printing)." },
+    columns: {
+      label: "Printer columns (start/width)",
+      placeholder: "0/15 15/10 25/10 35/15 50/15 65/15 80/20",
+      help: "Same numbers as IDentiPASS → Transaction Printer Setup, in its order: Date, Time, Card, Holder, Panel, Point, Action. Recommended: 0/12 12/10 22/10 32/30 62/16 78/30 108/25",
+    },
+  },
   saferwatch: {
     webhookSecret: { label: "Inbound webhook secret", type: "password", help: "SaferWatch (or a relay) sends this in the x-sentinel-secret header." },
     outboundUrl: { label: "Outbound alert URL", placeholder: "https://…", help: "Where console alerts are sent. Leave blank to only receive." },

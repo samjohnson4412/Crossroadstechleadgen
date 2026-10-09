@@ -11,8 +11,8 @@ import { poly, rect, type CameraPlacement, type DoorPlacement, type SiteConfig }
  * Cameras are CCC's Blue Iris cameras, placed from their names (YC = Y Building,
  * EB1/EB2 = Education levels, WC1/WC2 = Worship Center / Sanctuary levels). Cameras
  * whose location isn't clear from the name are left off the map; place them in
- * the console's Edit map. Controlled doors are still placeholders until the
- * UniFi Access door list arrives.
+ * the console's Edit map. Controlled doors are the IDentiPASS points (events only
+ * until UniFi Access replaces it).
  */
 
 /** A Blue Iris camera, by its short name. Positions are best guesses from the camera names — drag to fix in Edit map. */
@@ -24,6 +24,16 @@ const cam = (externalId: string, name: string, x: number, y: number, heading: nu
   fov,
   covers,
   source: { integration: "cameras", externalId },
+});
+
+/** A door on IDentiPASS, by its point name exactly as IDentiPASS prints it (without the "(n)" prefix). */
+const ipass = (point: string, x: number, y: number, between: [string, string], exterior = false): DoorPlacement => ({
+  id: `ip-${point.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+  name: point,
+  position: { x, y },
+  between,
+  exterior,
+  source: { integration: "identipass", externalId: point },
 });
 
 /** A camera on the second Blue Iris server. */
@@ -73,6 +83,12 @@ export const cccSite: SiteConfig = {
         token: { env: "UNIFI_ACCESS_TOKEN" },
         insecureTls: { env: "UNIFI_ACCESS_INSECURE_TLS", default: "true" },
       },
+    },
+    {
+      id: "identipass",
+      driver: "identipass",
+      name: "IDentiPASS (door events)",
+      settings: { listenPort: { env: "IDENTIPASS_PORT", default: "9100" }, columns: { env: "IDENTIPASS_COLUMNS" } },
     },
     {
       id: "saferwatch",
@@ -188,6 +204,10 @@ export const cccSite: SiteConfig = {
     { between: ["s2-se", "s2-south-hall"] },
     { between: ["s2-south-hall", "s2-238"] },
     { between: ["s2-south-hall", "s2-236"] },
+    { between: ["o-north-canopy", "s-north-lobby"] },
+    { between: ["y-east-hall", "o-north-parking"] },
+    { between: ["e2-south-hall", "e2-bridge"] },
+    { between: ["e2-bridge", "s2-west"] },
     // ---- Stairs / elevators between levels ----
     { between: ["e-utility", "e2-west-hall"], seconds: 25 },
     { between: ["s-west", "s2-west"], seconds: 25 },
@@ -328,12 +348,15 @@ export const cccSite: SiteConfig = {
             cam2("SLTVs", "South Lobby TVs", 525, 600, 270, ["s-south-lobby"]),
           ],
           doors: [
-            door("door-y-east", "Y Building East Door", 354, 180, ["y-east-hall", "o-north-parking"], true),
-            door("door-y-edu", "Y Lobby ↔ Education", 230, 287, ["y-lobby", "e-connector"]),
-            door("door-e-drive", "Education Connector Exterior", 255, 330, ["e-connector", "o-drive"], true),
-            door("door-s-main", "Sanctuary Main Entrance (North)", 512, 300, ["o-north-canopy", "s-north-lobby"], true),
-            door("door-s-west", "Sanctuary West Door", 330, 420, ["o-drive", "s-west"], true),
-            door("door-s-south", "Sanctuary South Entrance", 503, 668, ["s-south-lobby", "o-south-entrance"], true),
+            // IDentiPASS controlled doors (positions approximate — drag to fix in Edit map).
+            // For exterior doors list [outside, inside]: a badge swipe places the person inside.
+            ipass("WC West Lobby", 330, 420, ["o-drive", "s-west"], true),
+            ipass("WC South Lobby", 503, 668, ["o-south-entrance", "s-south-lobby"], true),
+            ipass("EB/YC Breezeway", 230, 287, ["y-lobby", "e-connector"]),
+            ipass("EB Academy Door", 255, 330, ["o-drive", "e-connector"], true),
+            ipass("YC Break Room", 200, 250, ["y-offices", "y-lobby"]),
+            ipass("YC Reception Desk", 120, 215, ["y-west", "y-offices"]),
+            ipass("YC Cafe Entry", 354, 250, ["o-north-parking", "y-cafe"], true),
           ],
           displays: [],
         },
@@ -397,8 +420,6 @@ export const cccSite: SiteConfig = {
             cam2("WC2_S232", "WC2 Middle School Corner", 650, 535, 315, ["s2-east-rooms"]),
           ],
           doors: [
-            door("door-bridge-edu", "Skybridge (Education side)", 213, 480, ["e2-south-hall", "e2-bridge"]),
-            door("door-bridge-san", "Skybridge (Sanctuary side)", 318, 480, ["e2-bridge", "s2-west"]),
           ],
           displays: [],
         },

@@ -51,9 +51,16 @@ export function describeDoor(status?: DoorStatus) {
   return `${lock} · ${status.position === "open" ? "Open" : status.position === "closed" ? "Closed" : "position unknown"}`;
 }
 
-export function DoorControls({ door, status }: { door: DoorPlacement; status?: DoorStatus }) {
+export function DoorControls({ door, status, controllable = true }: { door: DoorPlacement; status?: DoorStatus; controllable?: boolean }) {
   const { busy, error, run } = useAction();
   if (!door.source) return <p className="muted">Not connected to access control (passage only).</p>;
+  if (!controllable)
+    return (
+      <p className="muted small">
+        Badge and door events from this door show in Activity and feed tracking. Locking/unlocking from the console isn&apos;t available on this
+        access system yet — use its own software.
+      </p>
+    );
   const act = (action: string) => run(() => send(`/api/doors/${door.id}`, { action }));
   return (
     <div className="door-controls">

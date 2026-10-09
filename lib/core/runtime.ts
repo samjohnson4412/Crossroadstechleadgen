@@ -239,7 +239,31 @@ export class Runtime {
     this.pushEvent(event);
   }
 
+  private eventDoorTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * Doors on event-only systems (no live lock/position status) still show forced/held alarms
+   * on the map: red until a "closed/restored" event, or for 2 minutes.
+   */
+  private doorStatusFromEvent(event: SecurityEvent) {
+    if (!event.doorId) return;
+    const door = this.graph.doors.get(event.doorId);
+    const integ = door?.source && this.integrations.get(door.source.integration);
+    if (!integ || integ.instance.access) return;
+    const set = (position: DoorStatus["position"]) => {
+      const status: DoorStatus = { lock: "locked", position, mode: "normal", updatedAt: event.at };
+      this.doors.set(event.doorId!, status);
+      this.broadcast({ type: "door", doorId: event.doorId!, status });
+    };
+    clearTimeout(this.eventDoorTimers.get(event.doorId));
+    if (event.type === "door.forced" || event.type === "door.held") {
+      set("open");
+      this.eventDoorTimers.set(event.doorId, setTimeout(() => set("closed"), 120_000));
+    } else if (event.type === "door.closed") set("closed");
+  }
+
   private pushEvent(event: SecurityEvent) {
+    this.doorStatusFromEvent(event);
     this.events.push(event);
     if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
     this.broadcast({ type: "event", event });
