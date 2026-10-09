@@ -82,6 +82,14 @@ export class SimWorld {
     if (!this.timer) this.timer = setInterval(() => this.tick(), 500);
   }
 
+  stop() {
+    clearInterval(this.timer);
+    this.timer = undefined;
+    for (const t of this.relockTimers.values()) clearTimeout(t);
+    this.zoneListeners.clear();
+    this.doorListeners.clear();
+  }
+
   onZoneEnter(fn: ZoneEnterListener) {
     this.zoneListeners.add(fn);
     return () => this.zoneListeners.delete(fn);

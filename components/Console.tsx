@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SiteGraph } from "@/lib/core/graph";
 import type { SecurityEvent } from "@/lib/core/events";
 import type { LiveState } from "@/lib/core/live";
 import type { PublicSite, SiteConfig } from "@/lib/core/site";
 import { lastSighting } from "@/lib/tracking/tracker";
 import { CameraFeed } from "./CameraFeed";
+import { MapEditor } from "./MapEditor";
 import { MapView, type Selection } from "./MapView";
 import { AlertDialog, BroadcastDialog, describeDoor, DoorControls, EditableName, EventFeed, indexSite, IntegrationsDialog, LockdownDialog, TagDialog, useAction, type SiteIndex } from "./Panels";
 import { ago, buildOverlay, FollowView, trackColor, TrackSide, useNow } from "./TrackView";
@@ -31,6 +32,22 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
   const [modal, setModal] = useState<ModalKind>(null);
   const [showSim, setShowSim] = useState(false);
   const [hideDetections, setHideDetections] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [showBackground, setShowBackground] = useState(true);
+
+  // Background preference is per-viewer.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("sentinel.showBackground") === "0") setShowBackground(false);
+    } catch {}
+  }, []);
+  const toggleBackground = () =>
+    setShowBackground((v) => {
+      try {
+        localStorage.setItem("sentinel.showBackground", v ? "0" : "1");
+      } catch {}
+      return !v;
+    });
 
   const activeTracks = state.tracks.filter((t) => t.status === "active");
   const following = activeTracks.find((t) => t.id === followId) ?? null;
@@ -68,6 +85,14 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
             </button>
           ))}
         </nav>
+        {floors.some((f) => f.background) && (
+          <button className={showBackground ? "" : "on-muted"} onClick={toggleBackground} title="Show or hide the floor plan / aerial image">
+            {showBackground ? "Hide background" : "Show background"}
+          </button>
+        )}
+        <button className={editing ? "btn-primary" : ""} onClick={() => (setEditing((v) => !v), setFollowId(null), setSelection(null))}>
+          {editing ? "Editing map…" : "✎ Edit map"}
+        </button>
         <span className="spacer" />
         <button className={`status-pill${unhealthy ? " bad" : ""}`} onClick={() => setModal({ kind: "integrations" })}>
           <span className={`conn${connected ? " up" : ""}`} />
@@ -87,13 +112,25 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
       ))}
       {!state.authConfigured && <div className="banner subtle">Development mode: no operator logins configured (set CONSOLE_USERS).</div>}
 
+      {editing ? (
+        <main className="main">
+          <MapEditor
+            initial={{ buildings: site.buildings, passages: site.passages }}
+            floorId={floorId}
+            showBackground={showBackground}
+            cameraIntegration={state.integrations.find((i) => i.capabilities.includes("cameras"))?.id}
+            doorIntegration={state.integrations.find((i) => i.capabilities.includes("access-control"))?.id}
+            onDone={() => setEditing(false)}
+          />
+        </main>
+      ) : (
       <main className="main">
         <section className="stage">
           {following ? (
             <FollowView track={following} state={state} idx={idx} graph={graph} floors={floors} color={trackColor(state.tracks, following.id)} onExit={() => setFollowId(null)} />
           ) : (
             <>
-              <MapView floor={floor} doors={state.doors} selection={selection} onSelect={select} overlay={overlay} simActors={showSim ? state.sim : null} />
+              <MapView floor={floor} doors={state.doors} selection={selection} onSelect={select} overlay={overlay} simActors={showSim ? state.sim : null} showBackground={showBackground} />
               <div className="legend">
                 <span><i className="lg ok" />Locked</span>
                 <span><i className="lg warn" />Unlocked</span>
@@ -129,6 +166,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
           <EventFeed events={state.events} idx={idx} onLocate={locate} hideDetections={hideDetections} />
         </aside>
       </main>
+      )}
 
       {modal?.kind === "broadcast" && <BroadcastDialog idx={idx} onClose={() => setModal(null)} />}
       {modal?.kind === "lockdown" && <LockdownDialog active={state.lockdown} onClose={() => setModal(null)} />}

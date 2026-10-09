@@ -8,7 +8,7 @@ import { Tracker } from "../tracking/tracker.ts";
 import { newId, type RawEvent, type SecurityEvent } from "./events.ts";
 import { SiteGraph } from "./graph.ts";
 import type { AuditEntry, IntegrationView, LiveMessage, LiveState } from "./live.ts";
-import { loadOverrides, saveOverrides, type NamedKind, type SiteOverrides } from "./overrides.ts";
+import { loadOverrides, saveOverrides, type NamedKind, type SiteLayout, type SiteOverrides } from "./overrides.ts";
 import type { IntegrationConfig, SiteConfig } from "./site.ts";
 
 const MAX_EVENTS = 300;
@@ -39,7 +39,7 @@ function resolveSettings(config: IntegrationConfig) {
  * runs the tracker, and fans everything out to connected consoles.
  */
 export class Runtime {
-  readonly site: SiteConfig;
+  site: SiteConfig;
   readonly graph: SiteGraph;
   readonly tracker: Tracker;
   readonly integrations = new Map<string, RunningIntegration>();
@@ -54,9 +54,20 @@ export class Runtime {
   private readonly auditFile = path.join(process.cwd(), "data", "audit.jsonl");
   private readonly overrides: SiteOverrides;
 
+  private simTimer?: ReturnType<typeof setInterval>;
+
   constructor(site: SiteConfig) {
     this.site = structuredClone(site);
     this.overrides = loadOverrides();
+    if (this.overrides.layout) {
+      const edited = { ...this.site, ...structuredClone(this.overrides.layout) };
+      try {
+        validateSite(edited);
+        this.site = edited;
+      } catch (err) {
+        console.error(`Ignoring saved map layout (${(err as Error).message}); using the config file's layout.`);
+      }
+    }
     for (const [key, name] of Object.entries(this.overrides.names)) {
       const [kind, id] = key.split(":") as [NamedKind, string];
       const item = this.findNamed(kind, id);
@@ -99,8 +110,45 @@ export class Runtime {
     }
     if (this.simulating) {
       const world = simWorldFor(this.graph);
-      setInterval(() => this.broadcast({ type: "sim", actors: world.view() }), 1000);
+      this.simTimer = setInterval(() => this.broadcast({ type: "sim", actors: world.view() }), 1000);
     }
+  }
+
+  /** Shut down integrations and timers; open consoles are told to reconnect. */
+  async stop() {
+    clearInterval(this.simTimer);
+    simWorldFor(this.graph).stop();
+    for (const r of this.integrations.values()) await r.instance.stop().catch(() => {});
+    this.broadcast({ type: "site" });
+    this.listeners.clear();
+  }
+
+  /** Carry live state (tracks, events, audit) over from the runtime this one replaces. */
+  adopt(old: Runtime) {
+    this.events.push(...old.events);
+    this.audit.push(...old.audit);
+    this.lockdown = old.lockdown;
+    for (const track of old.tracker.tracks.values()) {
+      track.sightings = track.sightings.filter((s) => this.graph.zones.has(s.zoneId));
+      track.suggestions = [];
+      this.tracker.tracks.set(track.id, track);
+    }
+  }
+
+  layout(): SiteLayout {
+    return { buildings: this.site.buildings, passages: this.site.passages };
+  }
+
+  /** Save a layout drawn in the map editor, then restart on it. */
+  async saveLayout(layout: SiteLayout, actor: Actor) {
+    const candidate = { ...this.site, buildings: layout.buildings, passages: layout.passages };
+    validateSite(candidate);
+    await this.audited(actor, "layout.save", this.site.name, async () => {
+      this.overrides.layout = structuredClone(layout);
+      this.overrides.names = {}; // names are part of the saved layout now
+      saveOverrides(this.overrides);
+    });
+    await reloadRuntime();
   }
 
   // ---------- live fan-out ----------
@@ -355,16 +403,46 @@ export class Runtime {
   }
 }
 
+/** Throws if a layout is unusable: unknown zone references, duplicate ids, empty shapes. */
+export function validateSite(site: SiteConfig) {
+  const ids = new Set<string>();
+  for (const b of site.buildings)
+    for (const f of b.floors)
+      for (const item of [...f.zones, ...f.cameras, ...f.doors, ...f.displays]) {
+        if (!item.id || ids.has(item.id)) throw new Error(`Duplicate or missing id "${item.id}"`);
+        ids.add(item.id);
+        if (!item.name?.trim()) throw new Error(`"${item.id}" needs a name`);
+      }
+  for (const b of site.buildings)
+    for (const f of b.floors)
+      for (const z of f.zones) if (z.polygon.length < 3) throw new Error(`Room "${z.name}" needs at least 3 corners`);
+  new SiteGraph(site); // checks every door, passage and camera references real rooms
+}
+
 const globalForRuntime = globalThis as unknown as { __sentinel?: Promise<Runtime> };
+
+function baseSite(): SiteConfig {
+  const siteId = process.env.SENTINEL_SITE ?? "ccc";
+  const site = sites[siteId];
+  if (!site) throw new Error(`Unknown SENTINEL_SITE "${siteId}". Known: ${Object.keys(sites).join(", ")}`);
+  return site;
+}
 
 /** Process-wide runtime (survives dev hot reloads). */
 export function getRuntime(): Promise<Runtime> {
   if (!globalForRuntime.__sentinel) {
-    const siteId = process.env.SENTINEL_SITE ?? "ccc";
-    const site = sites[siteId];
-    if (!site) throw new Error(`Unknown SENTINEL_SITE "${siteId}". Known: ${Object.keys(sites).join(", ")}`);
-    const runtime = new Runtime(site);
+    const runtime = new Runtime(baseSite());
     globalForRuntime.__sentinel = runtime.start().then(() => runtime);
   }
+  return globalForRuntime.__sentinel;
+}
+
+/** Rebuild the runtime from the current config + saved overrides, keeping tracks and history. */
+export async function reloadRuntime(): Promise<Runtime> {
+  const old = await getRuntime();
+  const next = new Runtime(baseSite());
+  next.adopt(old);
+  await old.stop();
+  globalForRuntime.__sentinel = next.start().then(() => next);
   return globalForRuntime.__sentinel;
 }

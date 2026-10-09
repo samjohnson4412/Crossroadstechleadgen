@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import { bounds, centroid, type Floor, type Point } from "@/lib/core/site";
 import type { DoorStatus } from "@/lib/integrations/types";
 import type { SimActorView } from "@/lib/integrations/simulator";
 import { colorOf } from "./CameraFeed";
+import { useZoomPan, ZoomButtons } from "./useZoomPan";
 
 export type Selection = { kind: "zone" | "camera" | "door" | "display"; id: string } | null;
 
@@ -26,6 +26,7 @@ interface Props {
   overlay?: TrackOverlay | null;
   simActors?: SimActorView[] | null;
   compact?: boolean;
+  showBackground?: boolean;
 }
 
 export function doorColor(status?: DoorStatus, controlled = true) {
@@ -47,89 +48,28 @@ function wedge(p: Point, heading = 0, fov = 70, r = 55) {
   return `M${p.x},${p.y} L${a.x},${a.y} A${r},${r} 0 0 1 ${b.x},${b.y} Z`;
 }
 
-type ViewBox = { x: number; y: number; w: number; h: number };
-
 /** Interactive floor plan: zones, cameras, doors and displays; click anything to act on it. Scroll/drag/buttons to zoom and pan. */
-export function MapView({ floor, doors, selection, onSelect, overlay, simActors, compact }: Props) {
+export function MapView({ floor, doors, selection, onSelect, overlay, simActors, compact, showBackground = true }: Props) {
   const isSel = (kind: string, id: string) => selection?.kind === kind && selection.id === id;
-  const full: ViewBox = { x: 0, y: 0, w: floor.width, h: floor.height };
-  const [vb, setVb] = useState<ViewBox>(full);
-  const svgRef = useRef<SVGSVGElement>(null);
-  const drag = useRef<{ x: number; y: number; vb: ViewBox; moved: boolean } | null>(null);
-  const suppressClick = useRef(false);
+  const { svgRef, vb, setVb, full, zoomAt, panHandlers, suppressClick, zoomed } = useZoomPan(floor);
   // Marker sizes are authored for a 1000-unit-wide plan; scale them to this floor.
   const k = floor.width / 1000;
-
-  useEffect(() => setVb({ x: 0, y: 0, w: floor.width, h: floor.height }), [floor.id, floor.width, floor.height]);
-
-  const zoomAt = useCallback(
-    (factor: number, cx?: number, cy?: number) =>
-      setVb((v) => {
-        const w = Math.min(floor.width, Math.max(floor.width / 12, v.w * factor));
-        const h = (w / v.w) * v.h;
-        const px = cx ?? v.x + v.w / 2;
-        const py = cy ?? v.y + v.h / 2;
-        const x = px - ((px - v.x) * w) / v.w;
-        const y = py - ((py - v.y) * h) / v.h;
-        return { x: Math.min(Math.max(x, -w * 0.25), floor.width - w * 0.75), y: Math.min(Math.max(y, -h * 0.25), floor.height - h * 0.75), w, h };
-      }),
-    [floor.width, floor.height],
-  );
-
-  useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const pt = svg.createSVGPoint();
-      pt.x = e.clientX;
-      pt.y = e.clientY;
-      const p = pt.matrixTransform(svg.getScreenCTM()!.inverse());
-      zoomAt(e.deltaY > 0 ? 1.15 : 1 / 1.15, p.x, p.y);
-    };
-    svg.addEventListener("wheel", onWheel, { passive: false });
-    return () => svg.removeEventListener("wheel", onWheel);
-  }, [zoomAt]);
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    drag.current = { x: e.clientX, y: e.clientY, vb, moved: false };
-    suppressClick.current = false;
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    const d = drag.current;
-    const svg = svgRef.current;
-    if (!d || !svg) return;
-    const dx = e.clientX - d.x;
-    const dy = e.clientY - d.y;
-    if (!d.moved && Math.hypot(dx, dy) < 5) return;
-    if (!d.moved) svg.setPointerCapture(e.pointerId);
-    d.moved = true;
-    const scale = d.vb.w / svg.clientWidth;
-    setVb({ ...d.vb, x: d.vb.x - dx * scale, y: d.vb.y - dy * scale });
-  };
-  const onPointerUp = () => {
-    suppressClick.current = !!drag.current?.moved;
-    drag.current = null;
-  };
+  const bg = showBackground && floor.background;
   const pick = (s: Selection) => (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!suppressClick.current) onSelect(s);
   };
-  const zoomed = vb.w < floor.width - 1;
 
   return (
     <div className={`map-wrap${compact ? " compact" : ""}`}>
       <svg
         ref={svgRef}
-        className={`map${compact ? " map-compact" : ""}${floor.background ? " has-bg" : ""}`}
+        className={`map${compact ? " map-compact" : ""}${bg ? " has-bg" : ""}`}
         viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
         onClick={() => !suppressClick.current && onSelect(null)}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
+        {...panHandlers}
       >
-        {floor.background && <image href={floor.background} x={0} y={0} width={floor.width} height={floor.height} className="map-bg" />}
+        {bg && <image href={floor.background} x={0} y={0} width={floor.width} height={floor.height} className="map-bg" />}
 
         {floor.zones.map((z) => {
           const c = centroid(z.polygon);
@@ -216,11 +156,7 @@ export function MapView({ floor, doors, selection, onSelect, overlay, simActors,
         )}
         {overlay?.lastPoint && <circle className="pulse" cx={overlay.lastPoint.x} cy={overlay.lastPoint.y} r={12 * k} fill={overlay.color} pointerEvents="none" />}
       </svg>
-      <div className="map-zoom">
-        <button onClick={() => zoomAt(1 / 1.4)} title="Zoom in">+</button>
-        <button onClick={() => zoomAt(1.4)} title="Zoom out">−</button>
-        {zoomed && <button onClick={() => setVb(full)} title="Show whole floor">⤢</button>}
-      </div>
+      <ZoomButtons zoomAt={zoomAt} zoomed={zoomed} reset={() => setVb(full)} />
     </div>
   );
 }

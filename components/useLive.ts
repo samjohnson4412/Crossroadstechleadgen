@@ -37,6 +37,7 @@ export function useLive() {
     let source: EventSource | null = null;
     let cancelled = false;
     async function connect() {
+      source?.close();
       const [s, st] = await Promise.all([fetch("/api/site").then((r) => r.json()), fetch("/api/state").then((r) => r.json())]);
       if (cancelled) return;
       setSite(s);
@@ -47,7 +48,8 @@ export function useLive() {
       source.onmessage = (e) => {
         const msg = JSON.parse(e.data) as LiveMessage;
         if (msg.type === "site") {
-          fetch("/api/site").then((r) => r.json()).then(setSite).catch(() => {});
+          // Layout or names changed (the server may have restarted its live system): reload everything.
+          setTimeout(() => connect().catch(() => setConnected(false)), 300);
           return;
         }
         setState((prev) => (prev ? apply(prev, msg) : prev));
@@ -63,7 +65,7 @@ export function useLive() {
   return { site, state, connected };
 }
 
-export async function send(url: string, body: unknown, method: "POST" | "PATCH" = "POST") {
+export async function send(url: string, body: unknown, method: "POST" | "PATCH" | "PUT" = "POST") {
   const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
