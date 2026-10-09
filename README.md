@@ -30,7 +30,7 @@ First client: **CCC** (UniFi Access doors, Blue Iris cameras, SaferWatch, SMART 
 
 ```bash
 npm install
-npm run dev            # http://localhost:3000 — simulator mode, no login
+npm run dev            # http://localhost:3100 — simulator mode, no login
 npm test               # graph + tracker unit tests
 ```
 

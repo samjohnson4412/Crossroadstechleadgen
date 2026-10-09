@@ -4,9 +4,9 @@
   "private": true,
   "description": "Unified campus security console: building maps, live cameras, door control, and suspect tracking across any integrated system.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3100",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3100",
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types tests/*.test.ts"
   },
