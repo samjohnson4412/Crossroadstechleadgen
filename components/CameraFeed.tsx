@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CameraPlacement, Zone } from "@/lib/core/site";
 import { bounds } from "@/lib/core/site";
 import type { StreamInfo } from "@/lib/integrations/types";
@@ -34,8 +34,7 @@ export function CameraFeed({ camera, stream, zones, sim, badge, footer, emphasis
         ) : stream.kind === "simulated" ? (
           <SimFeed camera={camera} zones={zones} actors={sim ?? []} />
         ) : stream.kind === "mjpeg" ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={stream.url} alt={camera.name} />
+          <LiveImage streamUrl={stream.url} snapshotUrl={`/api/cameras/${camera.id}/snapshot`} alt={camera.name} />
         ) : (
           <div className="feed-empty">{stream.kind.toUpperCase()} playback not wired yet</div>
         )}
@@ -147,4 +146,27 @@ function SimFeed({ camera, zones, actors }: { camera: CameraPlacement; zones: Ma
   }, [camera, zones]);
 
   return <canvas ref={canvasRef} width={480} height={270} />;
+}
+
+/**
+ * Live MJPEG; if the camera server refuses the stream, fall back to a snapshot every second,
+ * and say so if neither works.
+ */
+function LiveImage({ streamUrl, snapshotUrl, alt }: { streamUrl: string; snapshotUrl: string; alt: string }) {
+  const [mode, setMode] = useState<"stream" | "snapshot" | "failed">("stream");
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (mode !== "snapshot") return;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [mode]);
+  if (mode === "failed") return <div className="feed-empty">Camera server isn&apos;t sending video for this camera</div>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={mode === "stream" ? streamUrl : `${snapshotUrl}?t=${tick}`}
+      alt={alt}
+      onError={() => setMode((m) => (m === "stream" ? "snapshot" : m === "snapshot" && tick === 0 ? "failed" : m))}
+    />
+  );
 }

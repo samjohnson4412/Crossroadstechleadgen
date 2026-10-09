@@ -114,6 +114,8 @@ export interface Integration {
   access?: AccessControlCapability;
   alerts?: AlertCapability;
   messaging?: MessagingCapability;
+  /** Step-by-step connection test for troubleshooting (GET /api/integrations/:id/check). */
+  diagnose?(): Promise<Record<string, unknown>>;
   /** Inbound webhooks from the vendor land here (POST /api/integrations/:id/webhook). */
   handleWebhook?(request: Request): Promise<Response>;
 }

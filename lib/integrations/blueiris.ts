@@ -64,17 +64,75 @@ export const blueIrisDriver: IntegrationDriver = {
       }
     }
 
-    async function proxy(path: string, signal?: AbortSignal) {
+    const basic = `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`;
+
+    /** Blue Iris versions/settings differ in which auth they accept for video; try session first, then user/password. */
+    async function fetchAuthed(path: string, signal?: AbortSignal) {
       if (!session) await login();
-      let res = await fetch(`${base}${path}?session=${session}`, { signal });
+      const sep = path.includes("?") ? "&" : "?";
+      let res = await fetch(`${base}${path}${sep}session=${session}`, { signal, headers: { Cookie: `session=${session}` } });
       if (res.status === 401 || res.status === 403) {
         await login();
-        res = await fetch(`${base}${path}?session=${session}`, { signal });
+        res = await fetch(`${base}${path}${sep}session=${session}`, { signal, headers: { Cookie: `session=${session}` } });
       }
-      return new Response(res.body, {
-        status: res.status,
-        headers: { "Content-Type": res.headers.get("Content-Type") ?? "application/octet-stream", "Cache-Control": "no-store" },
+      if (!res.ok) {
+        res.body?.cancel().catch(() => {});
+        res = await fetch(`${base}${path}${sep}user=${encodeURIComponent(user)}&pw=${encodeURIComponent(password)}`, { signal, headers: { Authorization: basic } });
+      }
+      return res;
+    }
+
+    async function proxy(paths: string[], signal?: AbortSignal) {
+      let res: Response | undefined;
+      let detail = "";
+      for (const path of paths) {
+        res = await fetchAuthed(path, signal);
+        if (res.ok) break;
+        detail = (await res.text().catch(() => "")).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+        ctx.log(`${path} → HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+      }
+      if (!res!.ok) return new Response(`Blue Iris HTTP ${res!.status}${detail ? `: ${detail}` : ""}`, { status: 502 });
+      return new Response(res!.body, {
+        status: res!.status,
+        headers: { "Content-Type": res!.headers.get("Content-Type") ?? "application/octet-stream", "Cache-Control": "no-store" },
       });
+    }
+
+    /** Step-by-step connection check, shown at /api/integrations/<id>/check. */
+    async function diagnose() {
+      const out: Record<string, unknown> = { url: base, user };
+      try {
+        session = null;
+        await login();
+        out.login = "ok";
+      } catch (err) {
+        out.login = (err as Error).message;
+        return out;
+      }
+      const list = await authed({ cmd: "camlist" }).catch((e) => ({ result: String(e), data: [] }));
+      const cams = ((list.data ?? []) as { optionValue: string; group?: unknown }[]).filter((c) => !c.optionValue.startsWith("@") && c.optionValue !== "Index" && !c.group);
+      out.cameras = cams.length;
+      const first = cams[0]?.optionValue;
+      if (!first) return out;
+      out.testCamera = first;
+      for (const [label, path] of [
+        ["snapshot", `/image/${encodeURIComponent(first)}`],
+        ["mjpeg", `/mjpg/${encodeURIComponent(first)}/video.mjpg`],
+        ["mjpeg (short path)", `/mjpg/${encodeURIComponent(first)}`],
+      ]) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 5000);
+        try {
+          const res = await fetchAuthed(path, ctrl.signal);
+          out[label] = res.ok ? `ok (${res.headers.get("Content-Type")})` : `HTTP ${res.status}: ${(await res.text()).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200)}`;
+        } catch (err) {
+          out[label] = (err as Error).message;
+        } finally {
+          clearTimeout(timer);
+          ctrl.abort();
+        }
+      }
+      return out;
     }
 
     return {
@@ -98,12 +156,14 @@ export const blueIrisDriver: IntegrationDriver = {
           return { kind: "mjpeg", url: `/api/cameras/${cameraId}/stream` };
         },
         proxyStream(externalId, signal) {
-          return proxy(`/mjpg/${encodeURIComponent(externalId)}/video.mjpg`, signal);
+          const id = encodeURIComponent(externalId);
+          return proxy([`/mjpg/${id}/video.mjpg`, `/mjpg/${id}`], signal);
         },
         snapshot(externalId) {
-          return proxy(`/image/${encodeURIComponent(externalId)}`);
+          return proxy([`/image/${encodeURIComponent(externalId)}`]);
         },
       },
+      diagnose,
       async handleWebhook(request) {
         const body = (await request.json().catch(() => ({}))) as { camera?: string; memo?: string; type?: string };
         if (!body.camera) return Response.json({ error: "camera required" }, { status: 400 });

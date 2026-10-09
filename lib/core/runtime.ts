@@ -119,6 +119,9 @@ export class Runtime {
       }
       running.instance.start().catch((err) => ctx.setHealth("offline", (err as Error).message));
     }
+    // Learn which server has which camera, then keep that current.
+    setTimeout(() => this.refreshVendorCameras().then(() => this.broadcast({ type: "site" })).catch(() => {}), 3000);
+    this.cameraRefresh = setInterval(() => this.refreshVendorCameras().catch(() => {}), 5 * 60_000);
     if (this.simulating) {
       const world = simWorldFor(this.graph);
       this.simTimer = setInterval(() => this.broadcast({ type: "sim", actors: world.view() }), 1000);
@@ -128,6 +131,7 @@ export class Runtime {
   /** Shut down integrations and timers; open consoles are told to reconnect. */
   async stop() {
     clearInterval(this.simTimer);
+    clearInterval(this.cameraRefresh);
     simWorldFor(this.graph).stop();
     for (const r of this.integrations.values()) await r.instance.stop().catch(() => {});
     this.broadcast({ type: "site" });
@@ -268,21 +272,59 @@ export class Runtime {
     }
   }
 
-  streamInfo(cameraId: string): StreamInfo {
+  /** Which camera server actually has each externalId (refreshed from the servers' camera lists). */
+  private vendorCameras = new Map<string, Set<string>>();
+  private cameraRefresh?: ReturnType<typeof setInterval>;
+
+  async refreshVendorCameras() {
+    for (const [id, r] of this.integrations) {
+      if (!r.instance.cameras || r.simulated || r.health.state === "unconfigured") continue;
+      try {
+        const list = await r.instance.cameras.listCameras();
+        this.vendorCameras.set(id, new Set(list.map((c) => c.externalId)));
+      } catch {
+        // keep the last known list
+      }
+    }
+  }
+
+  /**
+   * The integration to use for a map camera: the one it was placed with, unless that server
+   * doesn't have it and another camera server does (e.g. servers swapped in .env.local).
+   */
+  private cameraRoute(cameraId: string) {
     const cam = this.graph.cameras.get(cameraId);
-    if (!cam) return { kind: "unavailable", reason: "Unknown camera" };
-    const running = this.integrations.get(cam.source.integration);
+    if (!cam) return undefined;
+    const { integration, externalId } = cam.source;
+    const declared = this.vendorCameras.get(integration);
+    if (!declared?.has(externalId)) {
+      for (const [id, ids] of this.vendorCameras) if (ids.has(externalId)) return { cam, integrationId: id, running: this.integrations.get(id)! };
+    }
+    return { cam, integrationId: integration, running: this.integrations.get(integration) };
+  }
+
+  streamInfo(cameraId: string): StreamInfo {
+    const route = this.cameraRoute(cameraId);
+    if (!route) return { kind: "unavailable", reason: "Unknown camera" };
+    const { cam, running, integrationId } = route;
     if (running?.health.state === "unconfigured") return { kind: "unavailable", reason: `${running.config.name} isn't set up yet` };
     const cams = running?.instance.cameras;
-    if (!cams) return { kind: "unavailable", reason: `Integration ${cam.source.integration} has no camera capability` };
+    if (!cams) return { kind: "unavailable", reason: `Integration ${integrationId} has no camera capability` };
     return cams.streamInfo(cam.source.externalId, cam.id);
   }
 
   async proxyStream(cameraId: string, signal: AbortSignal): Promise<Response> {
-    const cam = this.graph.cameras.get(cameraId);
-    const cams = cam && this.integrations.get(cam.source.integration)?.instance.cameras;
-    if (!cam || !cams?.proxyStream) return new Response("No stream", { status: 404 });
-    return cams.proxyStream(cam.source.externalId, signal);
+    const route = this.cameraRoute(cameraId);
+    const cams = route?.running?.instance.cameras;
+    if (!route || !cams?.proxyStream) return new Response("No stream", { status: 404 });
+    return cams.proxyStream(route.cam.source.externalId, signal);
+  }
+
+  async cameraSnapshot(cameraId: string): Promise<Response> {
+    const route = this.cameraRoute(cameraId);
+    const cams = route?.running?.instance.cameras;
+    if (!route || !cams?.snapshot) return new Response("No snapshot", { status: 404 });
+    return cams.snapshot(route.cam.source.externalId);
   }
 
   async doorAction(doorId: string, action: DoorAction, actor: Actor) {
@@ -404,6 +446,23 @@ export class Runtime {
   /** Called after any tracker mutation from the API. */
   trackChanged(trackId: string) {
     this.broadcast({ type: "track", track: this.tracker.get(trackId) });
+  }
+
+  /** What a connection check needs: which settings are filled in (never their values), health, and the driver's own test. */
+  async checkIntegration(integrationId: string) {
+    const r = this.integrations.get(integrationId);
+    if (!r) throw new Error("Unknown integration");
+    const settings = Object.fromEntries(
+      Object.entries(r.config.settings).map(([key, v]) => [key, typeof v === "object" ? `${v.env}: ${process.env[v.env] ? "set" : "NOT SET"}` : "set in config"]),
+    );
+    return {
+      integration: r.config.name,
+      driver: r.driver.label,
+      simulated: r.simulated,
+      health: r.health,
+      settings,
+      test: r.simulated || r.health.state === "unconfigured" ? "skipped" : await r.instance.diagnose?.(),
+    };
   }
 
   async listVendorDevices(integrationId: string) {
