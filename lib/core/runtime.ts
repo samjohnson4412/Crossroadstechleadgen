@@ -8,6 +8,7 @@ import { Tracker } from "../tracking/tracker.ts";
 import { newId, type RawEvent, type SecurityEvent } from "./events.ts";
 import { SiteGraph } from "./graph.ts";
 import type { AuditEntry, IntegrationView, LiveMessage, LiveState } from "./live.ts";
+import { loadOverrides, saveOverrides, type NamedKind, type SiteOverrides } from "./overrides.ts";
 import type { IntegrationConfig, SiteConfig } from "./site.ts";
 
 const MAX_EVENTS = 300;
@@ -51,10 +52,17 @@ export class Runtime {
   private readonly doorByExternal = new Map<string, string>();
   private simulating = false;
   private readonly auditFile = path.join(process.cwd(), "data", "audit.jsonl");
+  private readonly overrides: SiteOverrides;
 
   constructor(site: SiteConfig) {
-    this.site = site;
-    this.graph = new SiteGraph(site);
+    this.site = structuredClone(site);
+    this.overrides = loadOverrides();
+    for (const [key, name] of Object.entries(this.overrides.names)) {
+      const [kind, id] = key.split(":") as [NamedKind, string];
+      const item = this.findNamed(kind, id);
+      if (item) item.name = name;
+    }
+    this.graph = new SiteGraph(this.site);
     this.tracker = new Tracker(this.graph);
     for (const c of this.graph.cameras.values()) this.cameraByExternal.set(`${c.source.integration}/${c.source.externalId}`, c.id);
     for (const d of this.graph.doors.values()) if (d.source) this.doorByExternal.set(`${d.source.integration}/${d.source.externalId}`, d.id);
@@ -303,6 +311,33 @@ export class Runtime {
     const r = this.integrations.get(integrationId);
     if (!r?.instance.handleWebhook) return Response.json({ error: "No webhook for this integration" }, { status: 404 });
     return r.instance.handleWebhook(request);
+  }
+
+  private findNamed(kind: NamedKind, id: string): { name: string } | undefined {
+    for (const b of this.site.buildings)
+      for (const f of b.floors) {
+        const list = kind === "zone" ? f.zones : kind === "camera" ? f.cameras : kind === "door" ? f.doors : f.displays;
+        const hit = (list as { id: string; name: string }[]).find((x) => x.id === id);
+        if (hit) return hit;
+      }
+    return undefined;
+  }
+
+  /** Rename a room, camera, door or display. Saved, and pushed to every open console. */
+  async rename(kind: NamedKind, id: string, name: string, actor: Actor) {
+    const clean = name.trim().slice(0, 80);
+    if (!clean) throw new Error("Name can't be empty");
+    const item = this.findNamed(kind, id);
+    if (!item) throw new Error(`Unknown ${kind} ${id}`);
+    await this.audited(actor, `rename.${kind}`, `${item.name} → ${clean}`, async () => {
+      item.name = clean;
+      const graphMap = kind === "zone" ? this.graph.zones : kind === "camera" ? this.graph.cameras : kind === "door" ? this.graph.doors : this.graph.displays;
+      const indexed = graphMap.get(id);
+      if (indexed) indexed.name = clean;
+      this.overrides.names[`${kind}:${id}`] = clean;
+      saveOverrides(this.overrides);
+      this.broadcast({ type: "site" });
+    });
   }
 
   /** Called after any tracker mutation from the API. */

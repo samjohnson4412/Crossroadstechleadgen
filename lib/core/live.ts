@@ -46,4 +46,6 @@ export type LiveMessage =
   | { type: "integration"; integration: IntegrationView }
   | { type: "audit"; entry: AuditEntry }
   | { type: "lockdown"; active: boolean }
-  | { type: "sim"; actors: SimActorView[] };
+  | { type: "sim"; actors: SimActorView[] }
+  /** Site layout or names changed; reload /api/site. */
+  | { type: "site" };

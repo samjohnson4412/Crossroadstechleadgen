@@ -8,7 +8,7 @@ import type { PublicSite, SiteConfig } from "@/lib/core/site";
 import { lastSighting } from "@/lib/tracking/tracker";
 import { CameraFeed } from "./CameraFeed";
 import { MapView, type Selection } from "./MapView";
-import { AlertDialog, BroadcastDialog, describeDoor, DoorControls, EventFeed, indexSite, IntegrationsDialog, LockdownDialog, TagDialog, useAction, type SiteIndex } from "./Panels";
+import { AlertDialog, BroadcastDialog, describeDoor, DoorControls, EditableName, EventFeed, indexSite, IntegrationsDialog, LockdownDialog, TagDialog, useAction, type SiteIndex } from "./Panels";
 import { ago, buildOverlay, FollowView, trackColor, TrackSide, useNow } from "./TrackView";
 import { send, useLive } from "./useLive";
 
@@ -241,7 +241,7 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
     const cam = idx.cameras.get(selection.id)!;
     return (
       <div className="panel">
-        <h3>{cam.name}</h3>
+        <EditableName key={cam.id} kind="camera" id={cam.id} name={cam.name} placeholder={cam.placeholder} />
         {camTile(cam.id, true)}
         {error && <p className="error">{error}</p>}
         <div className="section-title">Nearby cameras</div>
@@ -255,7 +255,7 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
     const cams = [...new Set(door.between.flatMap((z) => graph.camerasInZone(z)))];
     return (
       <div className="panel">
-        <h3>{door.name}</h3>
+        <EditableName key={door.id} kind="door" id={door.id} name={door.name} placeholder={door.placeholder} />
         <p className="muted small">{door.between.map((z) => idx.zones.get(z)?.name).join(" ↔ ")}{door.exterior ? " · exterior" : ""}</p>
         <DoorControls door={door} status={state.doors[door.id]} />
         <div className="section-title">Cameras on this door</div>
@@ -268,7 +268,7 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
     const d = idx.displays.get(selection.id)!;
     return (
       <div className="panel">
-        <h3>{d.name}</h3>
+        <EditableName key={d.id} kind="display" id={d.id} name={d.name} />
         <p className="muted small">SMART Board in {idx.zones.get(d.zoneId)?.name}. Use “Message boards” to send to it.</p>
       </div>
     );
@@ -279,7 +279,8 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
   const doors = [...idx.doors.values()].filter((d) => d.between.includes(zone.id) && d.source);
   return (
     <div className="panel">
-      <h3>{zone.name}</h3>
+      <EditableName key={zone.id} kind="zone" id={zone.id} name={zone.name} />
+      {zone.building && <div className="building">{zone.building}</div>}
       {cams.length ? <div className="mini-grid single">{cams.map((c) => camTile(c))}</div> : <p className="muted small">No camera covers this area.</p>}
       {cams.length === 0 && (
         <>

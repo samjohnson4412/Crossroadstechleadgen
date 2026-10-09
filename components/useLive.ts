@@ -22,6 +22,8 @@ function apply(state: LiveState, msg: LiveMessage): LiveState {
       return { ...state, lockdown: msg.active };
     case "sim":
       return { ...state, sim: msg.actors };
+    case "site":
+      return state;
   }
 }
 
@@ -44,6 +46,10 @@ export function useLive() {
       source.onerror = () => setConnected(false);
       source.onmessage = (e) => {
         const msg = JSON.parse(e.data) as LiveMessage;
+        if (msg.type === "site") {
+          fetch("/api/site").then((r) => r.json()).then(setSite).catch(() => {});
+          return;
+        }
         setState((prev) => (prev ? apply(prev, msg) : prev));
       };
     }

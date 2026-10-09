@@ -8,6 +8,7 @@ import type { DoorStatus } from "@/lib/integrations/types";
 import { COLOR_NAMES } from "./CameraFeed";
 import { send } from "./useLive";
 
+
 export interface SiteIndex {
   zones: Map<string, Zone & { floorId: string }>;
   cameras: Map<string, CameraPlacement & { floorId: string }>;
@@ -248,5 +249,43 @@ export function IntegrationsDialog({ state, onClose }: { state: LiveState; onClo
         {state.audit.length === 0 && <li className="muted">None yet.</li>}
       </ul>
     </Modal>
+  );
+}
+
+/** Panel heading that can be renamed in place. Saved on the server for everyone. */
+export function EditableName({ kind, id, name, placeholder }: { kind: "zone" | "camera" | "door" | "display"; id: string; name: string; placeholder?: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+  const { busy, error, run } = useAction();
+  const save = () =>
+    run(async () => {
+      await send("/api/site", { kind, id, name: value }, "PATCH");
+      setEditing(false);
+    });
+  if (!editing)
+    return (
+      <h3>
+        {name}
+        {placeholder && <span className="tag-placeholder" title="Location guessed; replace with the real device">PLACEHOLDER</span>}
+        <button className="btn-ghost rename" title="Rename" onClick={() => (setValue(name), setEditing(true))}>✎ Rename</button>
+      </h3>
+    );
+  return (
+    <>
+      <div className="name-edit">
+        <input
+          value={value}
+          autoFocus
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save();
+            if (e.key === "Escape") setEditing(false);
+          }}
+        />
+        <button className="btn-primary" disabled={busy || !value.trim()} onClick={save}>Save</button>
+        <button onClick={() => setEditing(false)}>Cancel</button>
+      </div>
+      {error && <p className="error">{error}</p>}
+    </>
   );
 }

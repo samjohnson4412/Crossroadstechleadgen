@@ -70,8 +70,10 @@ export class SimWorld {
       { id: "sim-4", name: "Student", appearance: { upperColor: "gray", lowerColor: "blue", tags: ["backpack"] } },
       { id: "sim-5", name: "Student", appearance: { upperColor: "white", lowerColor: "black" } },
     ];
+    // The unidentified visitor walks in through an entry area; everyone else starts somewhere inside.
+    const entry = [...graph.zones.values()].find((z) => z.kind === "entry")?.id;
     for (const p of people) {
-      const zoneId = p.id === "sim-visitor" && graph.zones.has("lobby") ? "lobby" : randomIn(interior);
+      const zoneId = p.id === "sim-visitor" && entry ? entry : randomIn(interior);
       this.actors.push({ ...p, zoneId, floorId: graph.zones.get(zoneId)!.floorId, position: this.pointIn(zoneId), nextMoveAt: Date.now() + 4000 + Math.random() * 12000 });
     }
   }

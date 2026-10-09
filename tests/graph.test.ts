@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cccSite } from "../config/sites/ccc.ts";
+import { demoSite } from "../config/sites/demo.ts";
 import { SiteGraph } from "../lib/core/graph.ts";
 
-const graph = new SiteGraph(cccSite);
+const graph = new SiteGraph(demoSite);
 
 test("doors and passages make zones adjacent", () => {
   assert.ok(graph.neighbors("lobby").includes("front-drive"));

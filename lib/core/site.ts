@@ -35,6 +35,8 @@ export interface Zone {
   name: string;
   kind: ZoneKind;
   polygon: Point[];
+  /** Which building it's in, for display ("Education", "Sanctuary", ...). */
+  building?: string;
 }
 
 export interface CameraPlacement {
@@ -48,6 +50,8 @@ export interface CameraPlacement {
   /** Zones this camera can see. Drives "which cameras show this area" and tracking. */
   covers: string[];
   source: DeviceRef;
+  /** Position guessed, not yet confirmed against the real device list. */
+  placeholder?: boolean;
 }
 
 export interface DoorPlacement {
@@ -59,6 +63,7 @@ export interface DoorPlacement {
   exterior?: boolean;
   /** Present when the door is wired to an access control system. */
   source?: DeviceRef;
+  placeholder?: boolean;
 }
 
 export interface DisplayPlacement {
@@ -151,4 +156,11 @@ export function bounds(polygon: Point[]) {
   const minX = Math.min(...xs);
   const minY = Math.min(...ys);
   return { minX, minY, maxX: Math.max(...xs), maxY: Math.max(...ys), w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
+}
+
+/** Polygon from a flat list of coordinates: poly(x1, y1, x2, y2, ...). */
+export function poly(...coords: number[]): Point[] {
+  const points: Point[] = [];
+  for (let i = 0; i < coords.length; i += 2) points.push({ x: coords[i], y: coords[i + 1] });
+  return points;
 }

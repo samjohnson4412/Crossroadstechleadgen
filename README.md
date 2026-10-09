@@ -8,7 +8,10 @@ First client: **CCC** (UniFi Access doors, Blue Iris cameras, SaferWatch, SMART 
 
 ## What works today
 
-- **Campus map** — floors, rooms, hallways, cameras (with view cones), doors, SMART Boards.
+- **CCC campus map** — Y Building, Education Building and Sanctuary on two levels, drawn over the
+  campus aerial so buildings sit where they really are. Scroll / drag / +− to zoom and pan.
+- **Rename anything** — click a room, camera or door → ✎ Rename. Saved on the server
+  (`data/site-overrides.ccc.json`) and updated live on every open console.
 - **Click an area** → its live cameras. **Click a camera** → live feed + nearby cameras.
 - **Click a door** → live lock/position state; unlock, hold unlocked, hold locked, return to schedule.
 - **Lockdown** — one button holds every controlled door locked (uses UniFi Access's native emergency lockdown).
@@ -32,6 +35,8 @@ First client: **CCC** (UniFi Access doors, Blue Iris cameras, SaferWatch, SMART 
 npm install
 npm run dev            # http://localhost:3100 — simulator mode, no login
 npm test               # graph + tracker unit tests
+
+# SENTINEL_SITE=demo uses a fictional school instead of the CCC campus
 ```
 
 Production (on a machine on the campus network, so it can reach Blue Iris / UniFi):
@@ -43,10 +48,13 @@ npm run build && npm start
 
 ## Hooking up CCC for real
 
+Cameras and controlled doors on the CCC map are **placeholders** (marked PLACEHOLDER in the console)
+until we have the real device lists.
+
 1. Fill in `BLUEIRIS_*` and `UNIFI_ACCESS_*` in `.env.local`.
 2. `GET /api/integrations/cameras/devices` and `/api/integrations/doors/devices` list what each
    system reports; put those ids into `config/sites/ccc.ts` (Blue Iris short names, UniFi door ids).
-3. Replace the placeholder layout in `config/sites/ccc.ts` with CCC's real floor plans.
+3. Replace the placeholder cameras/doors in `config/sites/ccc.ts` with the real ones.
 4. Point Blue Iris alert actions and UniFi Access webhooks at
    `/api/integrations/<id>/webhook?token=$WEBHOOK_TOKEN`.
 

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cccSite } from "../config/sites/ccc.ts";
+import { demoSite } from "../config/sites/demo.ts";
 import type { SecurityEvent } from "../lib/core/events.ts";
 import { SiteGraph } from "../lib/core/graph.ts";
 import { appearanceScore, reachability, Tracker } from "../lib/tracking/tracker.ts";
 
-const graph = new SiteGraph(cccSite);
+const graph = new SiteGraph(demoSite);
 const t0 = Date.parse("2026-01-01T12:00:00Z");
 const iso = (s: number) => new Date(t0 + s * 1000).toISOString();
 
