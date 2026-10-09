@@ -5,6 +5,7 @@ import { drivers } from "../integrations/registry.ts";
 import { createSimulatedIntegration, simWorldFor } from "../integrations/simulator.ts";
 import type { Actor, DisplayMessage, DoorStatus, Integration, IntegrationDriver, IntegrationHealth, StreamInfo } from "../integrations/types.ts";
 import { Tracker } from "../tracking/tracker.ts";
+import type { Alert, AlertChannel, AlertDelivery, AlertSpec } from "./alerts.ts";
 import { newId, type RawEvent, type SecurityEvent } from "./events.ts";
 import { SiteGraph } from "./graph.ts";
 import type { AuditEntry, IntegrationView, LiveMessage, LiveState } from "./live.ts";
@@ -46,6 +47,7 @@ export class Runtime {
   readonly doors = new Map<string, DoorStatus>();
   readonly events: SecurityEvent[] = [];
   readonly audit: AuditEntry[] = [];
+  readonly alerts: Alert[] = [];
   lockdown = false;
   private readonly listeners = new Set<(msg: LiveMessage) => void>();
   private readonly cameraByExternal = new Map<string, string>();
@@ -143,6 +145,7 @@ export class Runtime {
     this.events.push(...old.events);
     this.audit.push(...old.audit);
     this.lockdown = old.lockdown;
+    this.alerts.push(...old.alerts);
     for (const track of old.tracker.tracks.values()) {
       track.sightings = track.sightings.filter((s) => this.graph.zones.has(s.zoneId));
       track.suggestions = [];
@@ -207,6 +210,7 @@ export class Runtime {
       tracks: [...this.tracker.tracks.values()],
       audit: this.audit.slice(-50),
       lockdown: this.lockdown,
+      alerts: this.alerts.slice(-20),
       sim: this.simulating ? simWorldFor(this.graph).view() : null,
       authConfigured,
     };
@@ -395,19 +399,117 @@ export class Runtime {
     });
   }
 
-  async raiseAlert(alert: { title: string; detail: string; zoneId?: string }, actor: Actor) {
-    await this.audited(actor, "alert.raise", alert.title, async () => {
-      for (const r of this.integrations.values()) await r.instance.alerts?.raiseAlert?.(alert, actor);
-      this.pushEvent({
-        id: newId("evt"),
-        type: "alert.raised",
-        at: new Date().toISOString(),
-        severity: "critical",
-        integration: "console",
-        zoneId: alert.zoneId,
-        summary: `${alert.title}${alert.detail ? ` — ${alert.detail}` : ""} (raised by ${actor.name})`,
-      });
+  // ---------- mass notification ----------
+
+  /** Send one alert to the chosen areas over every chosen channel at once. */
+  async sendAlert(spec: AlertSpec, actor: Actor): Promise<Alert> {
+    if (!spec.title?.trim()) throw new Error("The alert needs a title");
+    if (!spec.channels?.length) throw new Error("Pick at least one way to send the alert");
+    if (spec.zoneIds) for (const z of spec.zoneIds) if (!this.graph.zones.has(z)) throw new Error(`Unknown area ${z}`);
+    const alert: Alert = { ...spec, title: spec.title.trim(), id: newId("alr"), at: new Date().toISOString(), by: actor.name, status: "active", deliveries: [] };
+    this.alerts.push(alert);
+    if (this.alerts.length > 50) this.alerts.splice(0, this.alerts.length - 50);
+    this.broadcast({ type: "alert", alert });
+    await this.audited(actor, `alert.${spec.presetId}`, `${alert.title} → ${spec.scopeLabel}`, async () => {
+      alert.deliveries = await this.deliver(alert, actor, false);
     });
+    this.pushEvent({
+      id: newId("evt"),
+      type: "alert.raised",
+      at: alert.at,
+      severity: spec.level === "emergency" ? "critical" : spec.level === "warning" ? "warning" : "notice",
+      integration: "console",
+      summary: `${alert.title} — ${spec.scopeLabel} (sent by ${actor.name})`,
+    });
+    this.broadcast({ type: "alert", alert });
+    return alert;
+  }
+
+  /** End an alert: sends "all clear" on the same channels to the same areas. */
+  async clearAlert(id: string, actor: Actor, options: { liftLockdown?: boolean } = {}) {
+    const alert = this.alerts.find((a) => a.id === id);
+    if (!alert) throw new Error("Alert not found");
+    if (alert.status === "cleared") return alert;
+    await this.audited(actor, "alert.clear", `${alert.title} → ${alert.scopeLabel}`, async () => {
+      const clearDeliveries = await this.deliver(alert, actor, true, options.liftLockdown);
+      alert.deliveries.push(...clearDeliveries.map((d) => ({ ...d, detail: `All clear: ${d.detail ?? d.status}` })));
+    });
+    alert.status = "cleared";
+    alert.clearedAt = new Date().toISOString();
+    alert.clearedBy = actor.name;
+    this.pushEvent({
+      id: newId("evt"),
+      type: "alert.cleared",
+      at: alert.clearedAt,
+      severity: "notice",
+      integration: "console",
+      summary: `All clear: ${alert.title} — ${alert.scopeLabel} (by ${actor.name})`,
+    });
+    this.broadcast({ type: "alert", alert });
+    return alert;
+  }
+
+  private async deliver(alert: Alert, actor: Actor, allClear: boolean, liftLockdown = false): Promise<AlertDelivery[]> {
+    const zones = alert.zoneIds ? new Set(alert.zoneIds) : null;
+    const title = allClear ? "ALL CLEAR" : alert.title;
+    const message = allClear ? `All clear. ${alert.title} has ended. Resume normal activity.` : alert.message;
+    const level = allClear ? "info" : alert.level;
+    const tasks: Promise<AlertDelivery>[] = [];
+    const attempt = (channel: AlertChannel, r: RunningIntegration, fn: () => Promise<string | void>) =>
+      tasks.push(
+        fn().then(
+          (detail) => ({ channel, system: r.config.name, status: r.simulated ? ("simulated" as const) : ("sent" as const), detail: detail || undefined }),
+          (err) => ({ channel, system: r.config.name, status: "failed" as const, detail: (err as Error).message }),
+        ),
+      );
+    const skipped = (channel: AlertChannel, system: string, detail: string) => tasks.push(Promise.resolve({ channel, system, status: "skipped", detail }));
+    const live = [...this.integrations.values()].filter((r) => r.health.state !== "unconfigured");
+
+    for (const channel of alert.channels) {
+      if (channel === "displays") {
+        const systems = live.filter((r) => r.instance.messaging);
+        if (!systems.length) skipped(channel, "SMART Boards", "No display system connected");
+        for (const r of systems) {
+          const mapped = [...this.graph.displays.values()].filter((d) => d.source.integration === r.config.id);
+          const targets = zones ? mapped.filter((d) => zones.has(d.zoneId)) : mapped;
+          if (zones && !targets.length) {
+            skipped(channel, r.config.name, "No SMART Boards are placed in the chosen areas yet");
+            continue;
+          }
+          // Campus-wide with no boards mapped yet: ask the system to show it on all its boards.
+          attempt(channel, r, async () => {
+            await r.instance.messaging!.send({ title, body: message, level }, targets.map((d) => d.source.externalId), actor);
+            return targets.length ? `${targets.length} board(s)` : "all boards";
+          });
+        }
+      } else if (channel === "paging") {
+        const systems = live.filter((r) => r.instance.paging);
+        if (!systems.length) skipped(channel, "Paging", "No speaker / paging system connected");
+        for (const r of systems) attempt(channel, r, () => r.instance.paging!.announce({ title, message, level, presetId: allClear ? "all-clear" : alert.presetId, zoneIds: alert.zoneIds }, actor));
+      } else if (channel === "saferwatch") {
+        const systems = live.filter((r) => r.instance.alerts);
+        if (!systems.length) skipped(channel, "SaferWatch", "SaferWatch not connected");
+        for (const r of systems) {
+          if (!r.instance.alerts!.raiseAlert) {
+            skipped(channel, r.config.name, "Sending to SaferWatch isn't set up (no outbound URL)");
+            continue;
+          }
+          attempt(channel, r, () => r.instance.alerts!.raiseAlert!({ title, detail: `${message} [${alert.scopeLabel}]`, zoneId: alert.zoneIds?.[0] }, actor));
+        }
+      } else if (channel === "lockdown") {
+        if (allClear && !liftLockdown) {
+          skipped(channel, "Doors", "Doors left locked — lift the lockdown separately when safe");
+          continue;
+        }
+        tasks.push(
+          this.setLockdown(!allClear, actor).then(
+            () => ({ channel, system: "Doors", status: "sent" as const, detail: allClear ? "Lockdown lifted" : "All controlled doors held locked" }),
+            (err) => ({ channel, system: "Doors", status: "failed" as const, detail: (err as Error).message }),
+          ),
+        );
+      }
+    }
+    return Promise.all(tasks);
   }
 
   async webhook(integrationId: string, request: Request): Promise<Response> {

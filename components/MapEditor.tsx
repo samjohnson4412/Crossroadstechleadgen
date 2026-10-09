@@ -8,12 +8,12 @@ import { useAction } from "./Panels";
 import { send } from "./useLive";
 import { useZoomPan, ZoomButtons } from "./useZoomPan";
 
-type Tool = "select" | "rect" | "shape" | "camera" | "door";
-type Sel = { kind: "zone" | "camera" | "door"; id: string } | null;
+type Tool = "select" | "rect" | "shape" | "camera" | "door" | "display";
+type Sel = { kind: "zone" | "camera" | "door" | "display"; id: string } | null;
 type Drag =
   | { type: "vertex"; zoneId: string; index: number }
   | { type: "zone"; zoneId: string; start: Point; orig: Point[] }
-  | { type: "camera" | "door"; id: string; start: Point; orig: Point }
+  | { type: "camera" | "door" | "display"; id: string; start: Point; orig: Point }
   | { type: "rect"; start: Point; current: Point };
 
 const KINDS: { value: ZoneKind; label: string }[] = [
@@ -37,6 +37,7 @@ interface Props {
   /** Camera systems (e.g. two Blue Iris servers) whose cameras can be placed. */
   cameraIntegrations: { id: string; name: string }[];
   doorIntegration?: string;
+  displayIntegration?: string;
   onDone: () => void;
 }
 
@@ -44,7 +45,7 @@ interface Props {
  * Map editor: draw and reshape rooms, place cameras and doors, set which rooms
  * connect. Works on a draft; nothing changes for other consoles until Save.
  */
-export function MapEditor({ initial, floorId, showBackground, cameraIntegrations, doorIntegration, onDone }: Props) {
+export function MapEditor({ initial, floorId, showBackground, cameraIntegrations, doorIntegration, displayIntegration, onDone }: Props) {
   const cameraIntegration = cameraIntegrations[0]?.id;
   const serverName = (id: string) => cameraIntegrations.find((c) => c.id === id)?.name ?? id;
   const [draft, setDraft] = useState<SiteLayout>(() => structuredClone(initial));
@@ -148,6 +149,7 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
           fl.displays = fl.displays.filter((x) => x.zoneId !== sel.id);
         }
       } else if (sel.kind === "camera") f.cameras = f.cameras.filter((c) => c.id !== sel.id);
+      else if (sel.kind === "display") f.displays = f.displays.filter((x) => x.id !== sel.id);
       else f.doors = f.doors.filter((x) => x.id !== sel.id);
     });
     setSel(null);
@@ -200,6 +202,15 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
       setSel({ kind: "camera", id });
       setTool("select");
       setPendingCam(null);
+    } else if (tool === "display") {
+      const z = zoneAt(p);
+      if (!z) return setHint("Click inside the room the SMART Board is in.");
+      const id = rid("board");
+      commit((d) =>
+        floorOf(d).displays.push({ id, name: `${z.name} board`, position: { x: Math.round(p.x), y: Math.round(p.y) }, zoneId: z.id, source: { integration: displayIntegration ?? "displays", externalId: id } }),
+      );
+      setSel({ kind: "display", id });
+      setTool("select");
     } else if (tool === "door") {
       const near = floor.zones
         .map((z) => ({ z, d: pointInPolygon(p, z.polygon) ? 0 : distanceToOutline(p, z.polygon).distance }))
@@ -238,7 +249,7 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
       const pos = { x: Math.round(drag.orig.x + p.x - drag.start.x), y: Math.round(drag.orig.y + p.y - drag.start.y) };
       commit((d) => {
         const f = floorOf(d);
-        const item = drag.type === "camera" ? f.cameras.find((c) => c.id === drag.id) : f.doors.find((x) => x.id === drag.id);
+        const item = drag.type === "camera" ? f.cameras.find((c) => c.id === drag.id) : drag.type === "door" ? f.doors.find((x) => x.id === drag.id) : f.displays.find((x) => x.id === drag.id);
         if (item) item.position = pos;
       }, false);
     }
@@ -299,6 +310,7 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
   const selZone = sel?.kind === "zone" ? floor.zones.find((z) => z.id === sel.id) : undefined;
   const selCam = sel?.kind === "camera" ? floor.cameras.find((c) => c.id === sel.id) : undefined;
   const selDoor = sel?.kind === "door" ? floor.doors.find((d) => d.id === sel.id) : undefined;
+  const selDisplay = sel?.kind === "display" ? floor.displays.find((d) => d.id === sel.id) : undefined;
   const bg = showBackground && floor.background;
   const hr = 5 * k * Math.max(0.5, zp.vb.w / floor.width);
 
@@ -308,6 +320,7 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
     { id: "shape", label: "✎ Any shape", help: "Click each corner. Click the first corner (or press Enter) to finish. Esc cancels." },
     { id: "camera", label: "◉ Add camera", help: "Click where the camera is mounted." },
     { id: "door", label: "▣ Add door", help: "Click on the wall between two rooms." },
+    { id: "display", label: "▭ Add SMART Board", help: "Click inside the room the board is in." },
   ];
 
   return (
@@ -391,6 +404,20 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
               <g key={d.id} className={`door${d.placeholder ? " placeholder" : ""}`} transform={`translate(${d.position.x} ${d.position.y}) scale(${k})`} onPointerDown={grab({ kind: "door", id: d.id }, (start) => ({ type: "door", id: d.id, start, orig: d.position }))} onClick={(e) => e.stopPropagation()}>
                 <rect x={-8} y={-8} width={16} height={16} rx={3} fill={d.source ? "var(--ok)" : "var(--door-passive)"} className={`door-shape${sel?.id === d.id ? " selected" : ""}`} />
               </g>
+            ))}
+
+            {floor.displays.map((d) => (
+              <rect
+                key={d.id}
+                x={d.position.x - 9 * k}
+                y={d.position.y - 5 * k}
+                width={18 * k}
+                height={10 * k}
+                rx={2 * k}
+                className={`display${sel?.id === d.id ? " selected" : ""}`}
+                onPointerDown={grab({ kind: "display", id: d.id }, (start) => ({ type: "display", id: d.id, start, orig: d.position }))}
+                onClick={(e) => e.stopPropagation()}
+              />
             ))}
 
             {selZone &&
@@ -541,6 +568,29 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
           </div>
         )}
 
+        {selDisplay && (
+          <div className="panel" key={selDisplay.id}>
+            <h3>SMART Board</h3>
+            <label>Name<input value={selDisplay.name} onChange={(e) => commit((d) => (findDisplay(d, selDisplay.id)!.name = e.target.value), false)} /></label>
+            <label>Room
+              <select value={selDisplay.zoneId} onChange={(e) => commit((d) => (findDisplay(d, selDisplay.id)!.zoneId = e.target.value))}>
+                {floor.zones.map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
+              </select>
+            </label>
+            <label>SMART device ID (from SMART Remote Management)
+              <input
+                value={selDisplay.source.externalId === selDisplay.id ? "" : selDisplay.source.externalId}
+                placeholder="Not linked yet"
+                onChange={(e) => commit((d) => {
+                  const x = findDisplay(d, selDisplay.id)!;
+                  x.source = { integration: x.source.integration, externalId: e.target.value.trim() || x.id };
+                }, false)}
+              />
+            </label>
+            <div className="btn-row end"><button className="btn-danger" onClick={deleteSelected}>Delete board</button></div>
+          </div>
+        )}
+
         {selDoor && (
           <div className="panel" key={selDoor.id}>
             <h3>Door</h3>
@@ -589,6 +639,9 @@ function findZone(d: SiteLayout, id: string) {
 }
 function findCam(d: SiteLayout, id: string) {
   return d.buildings.flatMap((b) => b.floors).flatMap((f) => f.cameras).find((c) => c.id === id);
+}
+function findDisplay(d: SiteLayout, id: string) {
+  return d.buildings.flatMap((b) => b.floors).flatMap((f) => f.displays).find((x) => x.id === id);
 }
 function findDoor(d: SiteLayout, id: string) {
   return d.buildings.flatMap((b) => b.floors).flatMap((f) => f.doors).find((x) => x.id === id);

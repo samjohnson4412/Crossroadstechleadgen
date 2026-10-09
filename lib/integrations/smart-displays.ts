@@ -1,13 +1,12 @@
 import type { IntegrationDriver } from "./types.ts";
 
 /**
- * SMART Technologies interactive displays (classroom SMART Boards).
+ * SMART Technologies interactive displays (classroom SMART Boards), via SMART Remote
+ * Management's API.
  *
- * Pushing a message onto a SMART Board goes through SMART's management tooling
- * (e.g. SMART Remote Management broadcast messages), whose API access depends on
- * CCC's licensing. Until that's confirmed this driver sends a plain JSON POST to
- * `sendUrl` — which can be SMART's endpoint once known, or a small relay — so the
- * console workflow (pick rooms → send → audit) is real today.
+ * TODO(SMART API): map send/clear onto SMART Remote Management's broadcast-message API
+ * once we have its API docs/key. Until then this sends a plain JSON POST to `sendUrl`
+ * (SMART's endpoint or a small relay), so the alert workflow is real today.
  *
  * Settings: sendUrl (required), token.
  * Body sent: {title, body, level, displays: [externalIds] (empty = all), sentBy}

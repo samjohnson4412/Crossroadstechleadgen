@@ -14,6 +14,11 @@ First client: **CCC** (UniFi Access doors, Blue Iris cameras, SaferWatch, SMART 
   (`data/site-overrides.ccc.json`) and updated live on every open console.
 - **Click an area** → its live cameras. **Click a camera** → live feed + nearby cameras.
 - **Click a door** → live lock/position state; unlock, hold unlocked, hold locked, return to schedule.
+- **🚨 Alert Center** — pick an alert (Lockdown, Secure, Evacuate, Shelter in place, Medical, Severe
+  weather, Announcement), pick where (entire campus, whole buildings/levels, or click rooms on the map),
+  pick how (SMART Boards, speakers/horns/phone paging via Algo, SaferWatch, door lockdown), send.
+  Each channel reports delivered / failed; the alert stays on every console until **All clear**,
+  which goes out on the same channels to the same areas.
 - **Lockdown** — one button holds every controlled door locked (uses UniFi Access's native emergency lockdown).
 - **Message SMART Boards** — all or selected rooms, info/warning/emergency.
 - **Raise / receive alerts** — SaferWatch alerts arrive by webhook and show as a banner.

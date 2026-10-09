@@ -340,6 +340,14 @@ export function createSimulatedIntegration(ctx: IntegrationContext, capabilities
       return Response.json({ ok: true });
     };
   }
+  if (capabilities.includes("paging")) {
+    integration.paging = {
+      async announce(a, actor) {
+        ctx.log(`[sim] paging (${a.level}) by ${actor.name}: ${a.title} — ${a.message}`);
+      },
+      async stop() {},
+    };
+  }
   if (capabilities.includes("messaging")) {
     integration.messaging = {
       async send(message, displays, actor) {
@@ -354,7 +362,7 @@ export function createSimulatedIntegration(ctx: IntegrationContext, capabilities
 export const simulatorDriver: IntegrationDriver = {
   id: "simulator",
   label: "Simulator",
-  capabilities: ["cameras", "access-control", "alerts", "messaging"],
+  capabilities: ["cameras", "access-control", "alerts", "messaging", "paging"],
   requiredSettings: [],
-  create: (ctx) => createSimulatedIntegration(ctx, ["cameras", "access-control", "alerts", "messaging"]),
+  create: (ctx) => createSimulatedIntegration(ctx, ["cameras", "access-control", "alerts", "messaging", "paging"]),
 };

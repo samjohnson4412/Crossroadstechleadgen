@@ -40,6 +40,12 @@ export const demoSite: SiteConfig = {
       },
     },
     {
+      id: "paging",
+      driver: "algo",
+      name: "Algo paging",
+      settings: { host: { env: "ALGO_HOST" }, password: { env: "ALGO_PASSWORD" } },
+    },
+    {
       id: "displays",
       driver: "smart-displays",
       name: "SMART Boards",

@@ -10,7 +10,7 @@ import type { IntegrationConfig } from "../core/site.ts";
  * Adding a vendor = writing one driver file and registering it in registry.ts.
  */
 
-export type Capability = "cameras" | "access-control" | "alerts" | "messaging";
+export type Capability = "cameras" | "access-control" | "alerts" | "messaging" | "paging";
 
 export type HealthState = "ok" | "degraded" | "offline" | "simulated" | "unconfigured";
 
@@ -94,6 +94,24 @@ export interface MessagingCapability {
   clear?(externalIds: string[], actor: Actor): Promise<void>;
 }
 
+// ---------- paging (IP speakers, horns, phone paging adapters) ----------
+
+export interface PagingAnnouncement {
+  title: string;
+  message: string;
+  level: "info" | "warning" | "emergency";
+  /** Preset id (lockdown, evacuate, ...) so a device can play the matching tone/recording. */
+  presetId: string;
+  /** Targeted areas; null = everywhere. Drivers that know their coverage use it to decide whether to sound. */
+  zoneIds: string[] | null;
+}
+
+export interface PagingCapability {
+  announce(a: PagingAnnouncement, actor: Actor): Promise<void>;
+  /** Stop any tone/announcement in progress. */
+  stop?(actor: Actor): Promise<void>;
+}
+
 // ---------- the integration itself ----------
 
 export interface IntegrationContext {
@@ -115,6 +133,7 @@ export interface Integration {
   access?: AccessControlCapability;
   alerts?: AlertCapability;
   messaging?: MessagingCapability;
+  paging?: PagingCapability;
   /** Step-by-step connection test for troubleshooting (GET /api/integrations/:id/check). */
   diagnose?(): Promise<Record<string, unknown>>;
   /** Inbound webhooks from the vendor land here (POST /api/integrations/:id/webhook). */

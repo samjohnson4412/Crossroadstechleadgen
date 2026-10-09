@@ -1,3 +1,4 @@
+import { algoDriver } from "./algo.ts";
 import { blueIrisDriver } from "./blueiris.ts";
 import { saferWatchDriver } from "./saferwatch.ts";
 import { simulatorDriver } from "./simulator.ts";
@@ -11,5 +12,5 @@ import { unifiAccessDriver } from "./unifi-access.ts";
  * and add it here; sites then reference it by `driver` id in their config.
  */
 export const drivers: Record<string, IntegrationDriver> = Object.fromEntries(
-  [blueIrisDriver, unifiAccessDriver, saferWatchDriver, smartDisplaysDriver, simulatorDriver].map((d) => [d.id, d]),
+  [blueIrisDriver, unifiAccessDriver, algoDriver, saferWatchDriver, smartDisplaysDriver, simulatorDriver].map((d) => [d.id, d]),
 );

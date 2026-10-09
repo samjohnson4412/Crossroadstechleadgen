@@ -1,7 +1,8 @@
 import { route } from "@/lib/api";
+import type { AlertSpec } from "@/lib/core/alerts";
 
+/** Send an alert: {presetId, level, title, message, zoneIds|null, scopeLabel, channels[]} */
 export const POST = route(async ({ runtime, request, operator }) => {
-  const body = (await request.json()) as { title?: string; detail?: string; zoneId?: string };
-  if (!body.title?.trim()) throw new Error("title is required");
-  await runtime.raiseAlert({ title: body.title.trim(), detail: body.detail ?? "", zoneId: body.zoneId }, operator);
+  const spec = (await request.json()) as AlertSpec;
+  return runtime.sendAlert(spec, operator);
 });

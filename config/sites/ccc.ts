@@ -85,6 +85,19 @@ export const cccSite: SiteConfig = {
       },
     },
     {
+      id: "paging",
+      driver: "algo",
+      name: "Algo paging (GoTo phones / horns)",
+      settings: {
+        host: { env: "ALGO_HOST" },
+        password: { env: "ALGO_PASSWORD" },
+        toneEmergency: { env: "ALGO_TONE_EMERGENCY", default: "emergency.wav" },
+        toneWarning: { env: "ALGO_TONE_WARNING", default: "warning.wav" },
+        toneInfo: { env: "ALGO_TONE_INFO", default: "chime.wav" },
+        tts: { env: "ALGO_TTS", default: "false" },
+      },
+    },
+    {
       id: "displays",
       driver: "smart-displays",
       name: "SMART Boards",

@@ -2,6 +2,7 @@
  * Shapes shared between server and browser for the live console state.
  * (Types only — safe to import from client components.)
  */
+import type { Alert } from "./alerts.ts";
 import type { SecurityEvent } from "./events.ts";
 import type { DoorStatus, IntegrationHealth, StreamInfo } from "../integrations/types.ts";
 import type { SimActorView } from "../integrations/simulator.ts";
@@ -35,6 +36,7 @@ export interface LiveState {
   tracks: Track[];
   audit: AuditEntry[];
   lockdown: boolean;
+  alerts: Alert[];
   sim: SimActorView[] | null;
   authConfigured: boolean;
 }
@@ -46,6 +48,7 @@ export type LiveMessage =
   | { type: "integration"; integration: IntegrationView }
   | { type: "audit"; entry: AuditEntry }
   | { type: "lockdown"; active: boolean }
+  | { type: "alert"; alert: Alert }
   | { type: "sim"; actors: SimActorView[] }
   /** Site layout or names changed; reload /api/site. */
   | { type: "site" };

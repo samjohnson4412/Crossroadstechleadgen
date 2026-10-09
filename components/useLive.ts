@@ -20,6 +20,10 @@ function apply(state: LiveState, msg: LiveMessage): LiveState {
       return { ...state, audit: [...state.audit.slice(-49), msg.entry] };
     case "lockdown":
       return { ...state, lockdown: msg.active };
+    case "alert": {
+      const others = state.alerts.filter((a) => a.id !== msg.alert.id);
+      return { ...state, alerts: [...others, msg.alert].sort((a, b) => a.at.localeCompare(b.at)).slice(-20) };
+    }
     case "sim":
       return { ...state, sim: msg.actors };
     case "site":

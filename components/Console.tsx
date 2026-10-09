@@ -7,13 +7,14 @@ import type { LiveState } from "@/lib/core/live";
 import type { PublicSite, SiteConfig } from "@/lib/core/site";
 import { lastSighting } from "@/lib/tracking/tracker";
 import { CameraFeed } from "./CameraFeed";
+import { ActiveAlerts, AlertCenter } from "./AlertCenter";
 import { MapEditor } from "./MapEditor";
 import { MapView, type Selection } from "./MapView";
-import { AlertDialog, AllCamerasDialog, BroadcastDialog, describeDoor, DoorControls, EditableName, EventFeed, indexSite, IntegrationsDialog, LockdownDialog, TagDialog, useAction, type SiteIndex } from "./Panels";
+import { AllCamerasDialog, describeDoor, DoorControls, EditableName, EventFeed, indexSite, IntegrationsDialog, LockdownDialog, TagDialog, useAction, type SiteIndex } from "./Panels";
 import { ago, buildOverlay, FollowView, trackColor, TrackSide, useNow } from "./TrackView";
 import { send, useLive } from "./useLive";
 
-type ModalKind = { kind: "cameras" } | { kind: "broadcast" } | { kind: "lockdown" } | { kind: "alert" } | { kind: "integrations" } | { kind: "tag"; cameraId?: string } | null;
+type ModalKind = { kind: "cameras" } | { kind: "lockdown" } | { kind: "alert" } | { kind: "integrations" } | { kind: "tag"; cameraId?: string } | null;
 
 export function Console() {
   const { site, state, connected } = useLive();
@@ -100,14 +101,14 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
         </button>
         <button onClick={() => setModal({ kind: "cameras" })}>All cameras</button>
         <button onClick={() => setModal({ kind: "tag" })}>Tag person</button>
-        <button onClick={() => setModal({ kind: "broadcast" })}>Message boards</button>
-        <button className="btn-warn" onClick={() => setModal({ kind: "alert" })}>Raise alert</button>
+        <button className="btn-alert" onClick={() => setModal({ kind: "alert" })}>🚨 Alert</button>
         <button className={state.lockdown ? "btn-primary" : "btn-danger"} onClick={() => setModal({ kind: "lockdown" })}>
           {state.lockdown ? "Lift lockdown" : "Lockdown"}
         </button>
       </header>
 
       {state.lockdown && <div className="banner danger">CAMPUS LOCKDOWN ACTIVE — all controlled doors held locked</div>}
+      <ActiveAlerts state={state} />
       {activeAlerts.map((a) => (
         <div key={a.id} className="banner warn">⚠ {a.summary} · {new Date(a.at).toLocaleTimeString()}</div>
       ))}
@@ -121,6 +122,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
             showBackground={showBackground}
             cameraIntegrations={state.integrations.filter((i) => i.capabilities.includes("cameras") && i.health.state !== "unconfigured").map((i) => ({ id: i.id, name: i.name }))}
             doorIntegration={state.integrations.find((i) => i.capabilities.includes("access-control"))?.id}
+            displayIntegration={state.integrations.find((i) => i.capabilities.includes("messaging"))?.id}
             onDone={() => setEditing(false)}
           />
         </main>
@@ -170,9 +172,8 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
       )}
 
       {modal?.kind === "cameras" && <AllCamerasDialog state={state} idx={idx} onClose={() => setModal(null)} onShowOnMap={(id) => (setEditing(false), setFollowId(null), select({ kind: "camera", id }))} />}
-      {modal?.kind === "broadcast" && <BroadcastDialog idx={idx} onClose={() => setModal(null)} />}
       {modal?.kind === "lockdown" && <LockdownDialog active={state.lockdown} onClose={() => setModal(null)} />}
-      {modal?.kind === "alert" && <AlertDialog onClose={() => setModal(null)} />}
+      {modal?.kind === "alert" && <AlertCenter site={site} state={state} onClose={() => setModal(null)} />}
       {modal?.kind === "integrations" && <IntegrationsDialog state={state} onClose={() => setModal(null)} />}
       {modal?.kind === "tag" && (
         <TagDialog camera={modal.cameraId ? idx.cameras.get(modal.cameraId) : undefined} onClose={() => setModal(null)} onCreated={(id) => setFollowId(id)} />
@@ -181,11 +182,12 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
   );
 }
 
-/** Alerts raised and not yet cleared (most recent few). */
+/** Alerts coming in from outside systems (e.g. a SaferWatch panic) not yet cleared. Console-sent alerts have their own banners. */
 function latestOpenAlerts(events: SecurityEvent[]) {
   const open: SecurityEvent[] = [];
   for (const e of events) {
-    if (e.type === "alert.raised" && !e.summary.startsWith("LOCKDOWN")) open.push(e);
+    if (e.integration === "console") continue;
+    if (e.type === "alert.raised") open.push(e);
     if (e.type === "alert.cleared") open.length = 0;
   }
   return open.slice(-2);
@@ -310,7 +312,7 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
     return (
       <div className="panel">
         <EditableName key={`name-${d.id}`} kind="display" id={d.id} name={d.name} />
-        <p className="muted small">SMART Board in {idx.zones.get(d.zoneId)?.name}. Use “Message boards” to send to it.</p>
+        <p className="muted small">SMART Board in {idx.zones.get(d.zoneId)?.name}. Use 🚨 Alert to send to it.</p>
       </div>
     );
   }
