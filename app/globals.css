@@ -315,3 +315,4 @@ button.on-muted { color: var(--muted); }
 .src-denied { color: var(--danger); }
 .path-banner { background: #0f2a1c; color: #86efac; font-weight: 600; display: flex; gap: 10px; align-items: center; }
 .topbar .count { margin-left: 6px; }
+.lost-chip { background: var(--danger); color: white; font-weight: 800; font-size: 11px; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 6px; margin-right: 8px; }

@@ -74,3 +74,22 @@ test("next cameras follow the latest sighting", () => {
   const next = tracker.nextCameras(track, 1).map((c) => c.cameraId);
   assert.ok(next.includes("c-stair-2"));
 });
+
+test("lost: the search area grows with time; undo goes back one sighting", async () => {
+  const { searchArea } = await import("../lib/tracking/tracker.ts");
+  const { tracker, track } = newTrack();
+  const at = new Date(t0).toISOString();
+  const soon = searchArea(graph, "lobby", at, t0 + 5_000).map((c) => c.cameraId);
+  const later = searchArea(graph, "lobby", at, t0 + 120_000).map((c) => c.cameraId);
+  assert.ok(soon.includes("c-lobby"));
+  assert.ok(!soon.includes("c-library"), "can't reach the library in 5 seconds");
+  assert.ok(later.length > soon.length, "two minutes later the search is wider");
+
+  tracker.addSighting(track.id, { cameraId: "c-hall-1w" }, "operator", "test", iso(30));
+  tracker.update(track.id, { lostAt: iso(60) });
+  assert.ok(track.lostAt);
+  tracker.undoLastSighting(track.id);
+  assert.equal(track.sightings.at(-1)!.zoneId, "lobby");
+  tracker.addSighting(track.id, { cameraId: "c-hall-1w" }, "operator", "test", iso(90));
+  assert.equal(track.lostAt, undefined, "a new sighting means they're found again");
+});

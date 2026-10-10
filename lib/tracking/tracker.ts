@@ -53,6 +53,8 @@ export interface Track {
   credentialIds: string[];
   sightings: Sighting[];
   suggestions: Suggestion[];
+  /** Set when the operator loses sight of them; cleared by the next sighting. */
+  lostAt?: string;
 }
 
 export const SUGGESTION_THRESHOLD = 0.45;
@@ -91,6 +93,24 @@ export function reachability(graph: SiteGraph, fromZone: string, fromAt: number,
   return { possible: d.seconds / MAX_SPEEDUP <= elapsed + 2, hops: d.hops, elapsed, walkSeconds: d.seconds };
 }
 
+/**
+ * Cameras someone last seen in `zoneId` at `since` could have reached by `now` (allowing for
+ * running), nearest first. Used when the operator has lost them.
+ */
+export function searchArea(graph: SiteGraph, zoneId: string, since: string, now = Date.now(), limit = 12) {
+  const elapsed = Math.max(0, (now - Date.parse(since)) / 1000);
+  const reach = elapsed * MAX_SPEEDUP + 15;
+  const out = new Map<string, { cameraId: string; hops: number; seconds: number }>();
+  for (const [zone, d] of graph.distancesFrom(zoneId)) {
+    if (d.seconds > reach) continue;
+    for (const cameraId of graph.camerasInZone(zone)) {
+      const prev = out.get(cameraId);
+      if (!prev || d.seconds < prev.seconds) out.set(cameraId, { cameraId, ...d });
+    }
+  }
+  return [...out.values()].sort((a, b) => a.seconds - b.seconds).slice(0, limit);
+}
+
 export function lastSighting(track: Track): Sighting | undefined {
   return track.sightings[track.sightings.length - 1];
 }
@@ -127,9 +147,10 @@ export class Tracker {
     return track;
   }
 
-  update(id: string, patch: Partial<Pick<Track, "label" | "description" | "appearance" | "credentialIds" | "status">>): Track {
+  update(id: string, patch: Partial<Pick<Track, "label" | "description" | "appearance" | "credentialIds" | "status" | "lostAt">>): Track {
     const track = this.get(id);
     Object.assign(track, patch);
+    if (patch.lostAt === null || patch.lostAt === "") delete track.lostAt;
     if (track.status === "closed") track.suggestions = [];
     return track;
   }
@@ -172,7 +193,25 @@ export class Tracker {
     track.sightings.sort((a, b) => a.at.localeCompare(b.at));
     // Older suggestions are superseded by a confirmed position.
     track.suggestions = track.suggestions.filter((s) => s.at > at);
+    delete track.lostAt;
     return sighting;
+  }
+
+  /** Remove the most recent sighting (e.g. clicked the wrong camera); the track goes back to the one before. */
+  undoLastSighting(trackId: string): Sighting | undefined {
+    const track = this.get(trackId);
+    const removed = track.sightings.pop();
+    track.suggestions = [];
+    return removed;
+  }
+
+  /**
+   * Cameras they could have reached since they were last seen, nearest first — the
+   * search area once the operator has lost them. Grows with the time elapsed.
+   */
+  searchCameras(track: Track, now = Date.now(), limit = 12) {
+    const last = lastSighting(track);
+    return last ? searchArea(this.graph, last.zoneId, last.at, now, limit) : [];
   }
 
   confirmSuggestion(trackId: string, suggestionId: string, by: string): Sighting {

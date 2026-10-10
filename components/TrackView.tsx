@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { SiteGraph } from "@/lib/core/graph";
 import type { LiveState } from "@/lib/core/live";
 import { centroid, type Floor } from "@/lib/core/site";
-import { lastSighting, type Track } from "@/lib/tracking/tracker";
+import { lastSighting, searchArea, type Track } from "@/lib/tracking/tracker";
 import { CameraFeed, colorOf } from "./CameraFeed";
 import { MapView, type TrackOverlay } from "./MapView";
 import { useAction, type SiteIndex } from "./Panels";
@@ -47,7 +47,13 @@ export function buildOverlay(track: Track, floor: Floor, idx: SiteIndex, graph: 
     trail,
     lastZoneId: last?.zoneId,
     lastPoint: last ? pointFor(last) ?? undefined : undefined,
-    predictedZoneIds: [...predicted].filter(([z, d]) => d.hops === 1 && idx.zones.get(z)?.floorId === floor.id).map(([z]) => z),
+    // Normally the next areas they can walk into; once lost, everywhere they could have reached by now.
+    predictedZoneIds: [...predicted]
+      .filter(([z, d]) =>
+        idx.zones.get(z)?.floorId === floor.id &&
+        (track.lostAt && last ? d.seconds <= ((Date.now() - Date.parse(last.at)) / 1000) * 2.5 + 15 && d.hops > 0 : d.hops === 1),
+      )
+      .map(([z]) => z),
   };
 }
 
@@ -72,7 +78,16 @@ export function FollowView({ track, state, idx, graph, color, onExit }: Props) {
   const [preview, setPreview] = useState<string | null>(null);
 
   const primaryId = preview ?? last?.cameraId ?? (last ? graph.camerasInZone(last.zoneId)[0] : undefined);
-  const next = useMemo(() => (last ? graph.camerasNear(last.zoneId, 2).filter((c) => c.cameraId !== primaryId) : []), [graph, last, primaryId]);
+  const lost = !!track.lostAt && !!last;
+  // Re-computed every second while lost, so the search area grows as time passes.
+  const searchTick = lost ? Math.floor(now / 5000) : 0;
+  const next = useMemo(
+    () => (!last ? [] : lost ? searchArea(graph, last.zoneId, last.at, Date.now(), 13) : graph.camerasNear(last.zoneId, 2)).filter((c) => c.cameraId !== primaryId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [graph, last, primaryId, lost, searchTick],
+  );
+  const markLost = (value: boolean) => run(() => send(`/api/tracks/${track.id}`, { lostAt: value ? new Date().toISOString() : "" }, "PATCH"));
+  const undo = () => run(() => send(`/api/tracks/${track.id}/sightings/undo`, {}));
   const suggestionByCam = new Map(track.suggestions.map((s) => [s.cameraId, s]));
   const zones = useMemo(() => new Map([...idx.zones].map(([k, z]) => [k, z])), [idx]);
 
@@ -97,9 +112,25 @@ export function FollowView({ track, state, idx, graph, color, onExit }: Props) {
         )}
         <span className="spacer" />
         {last ? (
-          <span className="last-seen">Last seen <strong>{idx.zones.get(last.zoneId)?.name}</strong> · {ago(last.at, now)}</span>
+          <span className="last-seen">
+            {lost && <span className="lost-chip">LOST · {ago(track.lostAt!, now).replace(" ago", "")}</span>}
+            Last seen <strong>{idx.zones.get(last.zoneId)?.name}</strong> · {ago(last.at, now)}
+          </span>
         ) : (
           <span className="last-seen">No sightings yet — click "Seen here" on any camera</span>
+        )}
+        {last && track.sightings.length > 0 && (
+          <button disabled={busy} onClick={undo} title="Remove the last sighting and go back to where they were before">↶ Wrong camera</button>
+        )}
+        {last && !lost && (
+          <button className="btn-warn" disabled={busy} onClick={() => markLost(true)} title="Search every camera they could have reached since they were last seen">
+            Lost them
+          </button>
+        )}
+        {lost && (
+          <button disabled={busy} onClick={() => markLost(false)} title="Back to the normal next-camera view">
+            Stop searching
+          </button>
         )}
         <button onClick={onExit}>Back to map</button>
       </div>
@@ -132,7 +163,9 @@ export function FollowView({ track, state, idx, graph, color, onExit }: Props) {
           )}
         </div>
         <div className="follow-next">
-          <div className="section-title">Where they can go next</div>
+          <div className="section-title">
+            {lost ? "Search area — every camera they could have reached by now (widens over time)" : "Where they can go next"}
+          </div>
           <div className="next-grid">
             {next.slice(0, 8).map((n) => {
               const cam = idx.cameras.get(n.cameraId)!;
