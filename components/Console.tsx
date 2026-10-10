@@ -39,6 +39,13 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
   const [showBackground, setShowBackground] = useState(true);
   const [badgePath, setBadgePath] = useState<BadgePath | null>(null);
 
+  // Phones get the phone view unless they've chosen the full console.
+  useEffect(() => {
+    try {
+      if (window.innerWidth < 760 && localStorage.getItem("sentinel.desktop") !== "1") window.location.replace("/m");
+    } catch {}
+  }, []);
+
   // Background preference is per-viewer.
   useEffect(() => {
     try {

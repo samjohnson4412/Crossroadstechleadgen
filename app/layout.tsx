@@ -1,10 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Campus Sentinel",
   description: "Unified campus security console",
 };
+
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#0d1117" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
