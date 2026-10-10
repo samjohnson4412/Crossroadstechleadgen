@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { findRooms } from "../lib/floorplan/rooms.ts";
-import { importFloorPlan } from "../lib/floorplan/importPlan.ts";
+import { applyPlan, readPlan } from "../lib/floorplan/importPlan.ts";
 import { doorTypeFromColor, parsePathData, parsePlanSvg } from "../lib/floorplan/svg.ts";
 import { rect, type Floor } from "../lib/core/site.ts";
 import type { SiteLayout } from "../lib/core/overrides.ts";
@@ -61,7 +61,7 @@ test("rooms come from enclosed walls and dividers, named by their labels", () =>
   assert.equal(doors.filter((d) => d.between.includes(byName("R4"))).length, 1, "double door lines are one door");
 });
 
-test("import fits the plan onto the old rooms (even turned 90°) and keeps their ids", () => {
+test("placing a plan replaces a building's rooms where the operator put it", () => {
   // Old map: the same building turned a quarter turn and doubled: plan (x, y) → map (100 + 2y, 700 − 2x).
   const m = (x: number, y: number) => ({ x: 100 + 2 * y, y: 700 - 2 * x });
   const box = (x0: number, y0: number, x1: number, y1: number) => [m(x0, y0), m(x1, y0), m(x1, y1), m(x0, y1)];
@@ -72,7 +72,6 @@ test("import fits the plan onto the old rooms (even turned 90°) and keeps their
     height: 1000,
     zones: [
       { id: "old-r1", name: "R1", kind: "room", building: "Test", polygon: box(0, 0, 100, 200) },
-      { id: "old-r2", name: "R2", kind: "room", building: "Test", polygon: box(100, 0, 200, 200) },
       { id: "old-r3", name: "R3", kind: "room", building: "Test", polygon: box(200, 0, 300, 100) },
       { id: "old-hall", name: "Old hall", kind: "hall", building: "Test", polygon: box(200, 100, 300, 200) },
       { id: "yard", name: "Yard", kind: "outdoor", polygon: rect(100, 705, 400, 100) },
@@ -82,32 +81,32 @@ test("import fits the plan onto the old rooms (even turned 90°) and keeps their
     displays: [],
   };
   const layout: SiteLayout = { buildings: [{ id: "b", name: "Campus", floors: [floor] }], passages: [{ between: ["old-hall", "yard"] }] };
-  const { layout: out, report } = importFloorPlan({
-    layout,
-    floorId: "l1",
-    building: "Test",
-    svg: SVG,
-    cameras: [{ integration: "cams", externalId: "t1-r2", name: "T1 Studio 12" }, { integration: "cams", externalId: "x", name: "Lobby" }],
-    cameraPrefix: "T1",
-  });
+  const plan = readPlan(SVG);
+  // The operator turned it a quarter turn left (3 right) and doubled it, centred at (300, 400).
+  const { layout: out, report } = applyPlan({ layout, floorId: "l1", plan, placement: { x: 300, y: 400, turns: 3, scaleX: 2, scaleY: 2 }, building: "Test", replace: "Test" });
   const f = out.buildings[0].floors[0];
-  assert.equal(report.fit, "matched rooms");
-  assert.ok(report.fitError! < 1, `fit error ${report.fitError}`);
-  const ids = f.zones.map((z) => z.id);
-  for (const id of ["old-r1", "old-r2", "old-r3", "yard"]) assert.ok(ids.includes(id), id);
-  assert.ok(!ids.includes("old-hall"));
-  const r4 = f.zones.find((z) => z.name === "R4")!;
-  // The old hall's camera and passage now point at the room in the same spot.
-  assert.deepEqual(f.cameras.find((c) => c.id === "c1")!.covers, [r4.id]);
-  assert.deepEqual(out.passages[0].between, [r4.id, "yard"]);
-  // The badge door snapped onto the plan's outside door of R1.
-  const side = f.doors.find((d) => d.id === "side")!;
-  assert.deepEqual(side.between, ["yard", "old-r1"]);
-  assert.ok(Math.hypot(side.position.x - 200, side.position.y - 700) < 2);
-  // R1's plan door became the badge door, not a second door.
-  assert.equal(f.doors.filter((d) => d.between.includes("yard") && d.between.includes("old-r1")).length, 1);
-  assert.equal(f.doors.find((d) => d.between.includes("old-r1") && d.between.includes("old-r2"))?.lockType, "access");
-  // Camera named after a room, with the building prefix.
-  assert.deepEqual(report.camerasPlaced, ["T1 Studio 12 → R2 Studio"]);
-  assert.equal(f.drawings?.[0].building, "Test");
+  const zone = (name: string) => f.zones.find((z) => z.name === name)!;
+  assert.deepEqual(zone("R1 Office").polygon.map((p) => [p.x, p.y]).sort(), box(0, 0, 100, 200).map((p) => [p.x, p.y]).sort());
+  assert.equal(zone("R3").id, "old-r3", "same name keeps its id");
+  assert.ok(!f.zones.some((z) => z.id === "old-hall" || z.id === "old-r1"));
+  // Things that pointed at old rooms now point at the room in the same spot.
+  assert.deepEqual(f.cameras[0].covers, [zone("R4").id]);
+  assert.deepEqual(out.passages[0].between, [zone("R4").id, "yard"]);
+  assert.deepEqual(f.doors.find((d) => d.id === "side")!.between, ["yard", zone("R1 Office").id]);
+  // Plan doors: R1's outside door reaches the yard; R4's leads nowhere drawn.
+  assert.ok(f.doors.some((d) => !d.source && d.exterior && d.between[0] === "yard" && d.between[1] === zone("R1 Office").id));
+  assert.equal(report.exteriorDoors, 1);
+  assert.ok(report.warnings.some((w) => w.includes("R4")));
+  assert.equal(f.doors.find((d) => d.between.includes(zone("R1 Office").id) && d.between.includes(zone("R2 Studio").id))?.lockType, "access");
+  assert.equal(f.drawings?.length, 1);
+});
+
+test("adding a plan as a new building leaves other rooms alone", () => {
+  const floor: Floor = { id: "l1", name: "L1", width: 1000, height: 1000, zones: [{ id: "a", name: "A", kind: "room", building: "Other", polygon: rect(0, 0, 10, 10) }], cameras: [], doors: [], displays: [] };
+  const plan = readPlan(SVG);
+  const { layout } = applyPlan({ layout: { buildings: [{ id: "b", name: "B", floors: [floor] }], passages: [] }, floorId: "l1", plan, placement: { x: 500, y: 500, turns: 0, scaleX: 1, scaleY: 1 }, building: "New" });
+  const f = layout.buildings[0].floors[0];
+  assert.equal(f.zones.length, 5);
+  assert.ok(f.zones.find((z) => z.id === "a"));
+  assert.ok(f.zones.filter((z) => z.building === "New").every((z) => z.polygon.every((p) => p.x >= 340 && p.x <= 660)));
 });

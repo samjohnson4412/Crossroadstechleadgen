@@ -47,9 +47,9 @@ Moving CCC from Blue Iris to UniFi Protect cameras = write a `unifi-protect` dri
 Detailed plans are drawn in Inkscape on `docs/floorplans/floorplan-template.svg` and imported
 from the map editor (`lib/floorplan/`): `svg.ts` reads the Walls / Dividers / Doors / Labels
 layers, `rooms.ts` turns enclosed areas into rooms and door lines into connections, and
-`importPlan.ts` fits the plan onto the map (quarter turns + stretch, from room numbers shared with
-the old rooms), keeps matched room ids, moves cameras/doors/passages over, and places cameras by
-name. The walls are stored with the floor (`Floor.drawings`) and drawn over the background.
+`importPlan.ts` places it where the operator lined it up (move, resize, quarter turns) and,
+when it replaces a building, points cameras/doors/passages at the new room in the same spot. The
+walls are stored with the floor (`Floor.drawings`) and drawn over the background.
 Doors carry a `lockType` (badge / keypad / key / unlocked).
 
 ## Tracking: how "follow a suspect" works

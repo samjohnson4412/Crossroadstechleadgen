@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { closestOnSegment, distanceToOutline, pointInPolygon, polygonsTouch } from "@/lib/core/geometry";
 import type { SiteLayout } from "@/lib/core/overrides";
 import { bounds, centroid, DOOR_LOCK_LABELS, type CameraPlacement, type DoorLockType, type DoorPlacement, type Floor, type Point, type Zone, type ZoneKind } from "@/lib/core/site";
-import { ImportPlanDialog } from "./ImportPlan";
+import { applyPlan, placer, startPlacement, turnedSize, type Placement } from "@/lib/floorplan/importPlan";
+import { ImportPlanDialog, type PlanChoice } from "./ImportPlan";
 import { drawnBuildings, lockColor, markerScale, PlanDrawings, zoneLabel } from "./MapView";
 import { useAction } from "./Panels";
 import { send } from "./useLive";
@@ -16,7 +17,9 @@ type Drag =
   | { type: "vertex"; zoneId: string; index: number }
   | { type: "zone"; zoneId: string; start: Point; orig: Point[] }
   | { type: "camera" | "door" | "display"; id: string; start: Point; orig: Point }
-  | { type: "rect"; start: Point; current: Point };
+  | { type: "rect"; start: Point; current: Point }
+  | { type: "plan-move"; start: Point; orig: Placement }
+  | { type: "plan-size" };
 
 const KINDS: { value: ZoneKind; label: string }[] = [
   { value: "room", label: "Room / classroom" },
@@ -66,6 +69,8 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
   const ignoreClick = useRef(false);
   const [rectPreview, setRectPreview] = useState<{ a: Point; b: Point } | null>(null);
   const [importing, setImporting] = useState(false);
+  /** A floor plan being lined up on the map before it's added. */
+  const [placing, setPlacing] = useState<(PlanChoice & { at: Placement; base: number; keepShape: boolean }) | null>(null);
   const { busy, error, run } = useAction();
 
   const floors = draft.buildings.flatMap((b) => b.floors);
@@ -232,7 +237,19 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
     const drag = dragRef.current;
     if (!drag) return zp.panHandlers.onPointerMove(e);
     const p = zp.toSvg(e.clientX, e.clientY);
-    if (drag.type === "rect") {
+    if (drag.type === "plan-move") {
+      setPlacing((pl) => pl && { ...pl, at: { ...drag.orig, x: drag.orig.x + p.x - drag.start.x, y: drag.orig.y + p.y - drag.start.y } });
+    } else if (drag.type === "plan-size") {
+      setPlacing((pl) => {
+        if (!pl) return pl;
+        const { w, h } = turnedSize(pl.plan, pl.at.turns);
+        const dx = Math.max(2, p.x - pl.at.x), dy = Math.max(2, p.y - pl.at.y);
+        if (!pl.keepShape) return { ...pl, at: { ...pl.at, scaleX: (2 * dx) / w, scaleY: (2 * dy) / h } };
+        // Keep the shape: follow the handle along the box's diagonal.
+        const s = (dx * w + dy * h) / ((w * w + h * h) / 2);
+        return { ...pl, at: { ...pl.at, scaleX: s, scaleY: s } };
+      });
+    } else if (drag.type === "rect") {
       drag.current = snap(p);
       setRectPreview({ a: drag.start, b: drag.current });
     } else if (drag.type === "vertex") {
@@ -302,6 +319,20 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
     commit((d) => floorOf(d).zones.find((z) => z.id === zone.id)!.polygon.splice(index, 1));
   };
 
+  function finishPlacing() {
+    if (!placing) return;
+    try {
+      const { layout, report } = applyPlan({ layout: draftRef.current, floorId: floor.id, plan: placing.plan, placement: placing.at, building: placing.building, replace: placing.replace });
+      setHistory((h) => [...h.slice(-49), draftRef.current]);
+      setDraft(layout);
+      setPlacing(null);
+      const removed = report.removedRooms.length ? ` Replaced ${report.removedRooms.length} old rooms.` : "";
+      setHint(`Added ${report.rooms} rooms and ${report.doors} doors.${removed}${report.warnings.length ? " " + report.warnings.join(" ") : ""} Check it over, then Save map (Undo takes it back).`);
+    } catch (err) {
+      setHint((err as Error).message);
+    }
+  }
+
   const save = () =>
     run(async () => {
       await send("/api/site/layout", draft, "PUT");
@@ -332,6 +363,29 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
   return (
     <>
       <section className="stage">
+        {placing ? (
+          <div className="editor-bar placing-bar">
+            <strong>Line up “{placing.building}”</strong>
+            <button onClick={() => setPlacing({ ...placing, at: { ...placing.at, turns: placing.at.turns + 3, scaleX: placing.at.scaleY, scaleY: placing.at.scaleX } })} title="Turn left 90°">⟲ 90°</button>
+            <button onClick={() => setPlacing({ ...placing, at: { ...placing.at, turns: placing.at.turns + 1, scaleX: placing.at.scaleY, scaleY: placing.at.scaleX } })} title="Turn right 90°">⟳ 90°</button>
+            <label className="inline-num">Width
+              <input type="number" min={5} step={1} value={Math.round((placing.at.scaleX / placing.base) * 100)} onChange={(e) => {
+                const sx = (Number(e.target.value) / 100) * placing.base;
+                if (sx > 0) setPlacing({ ...placing, at: { ...placing.at, scaleX: sx, scaleY: placing.keepShape ? sx : placing.at.scaleY } });
+              }} />%
+            </label>
+            <label className="inline-num">Height
+              <input type="number" min={5} step={1} value={Math.round((placing.at.scaleY / placing.base) * 100)} onChange={(e) => {
+                const sy = (Number(e.target.value) / 100) * placing.base;
+                if (sy > 0) setPlacing({ ...placing, at: { ...placing.at, scaleY: sy, scaleX: placing.keepShape ? sy : placing.at.scaleX } });
+              }} />%
+            </label>
+            <label className="toggle"><input type="checkbox" checked={placing.keepShape} onChange={(e) => setPlacing({ ...placing, keepShape: e.target.checked })} /> Keep shape</label>
+            <span className="spacer" />
+            <button onClick={() => setPlacing(null)}>Cancel</button>
+            <button className="btn-primary" onClick={finishPlacing}>OK — add to map</button>
+          </div>
+        ) : (
         <div className="editor-bar">
           {TOOLS.map((t) => (
             <button key={t.id} className={tool === t.id ? "on" : ""} onClick={() => (setTool(t.id), setShapePoints([]), setHint(null), setPendingCam(null))}>
@@ -344,8 +398,9 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
           <button onClick={onDone} disabled={busy}>Cancel</button>
           <button className="btn-primary" onClick={save} disabled={busy}>Save map</button>
         </div>
+        )}
         <div className="editor-hint">
-          {hint ?? TOOLS.find((t) => t.id === tool)!.help}
+          {placing ? "Drag the plan to move it. Drag the round handle (bottom-right) to resize; untick Keep shape to stretch it. Turn the background on to line it up with the photo." : hint ?? TOOLS.find((t) => t.id === tool)!.help}
           {tool === "shape" && shapePoints.length >= 3 && <button className="btn-primary small-btn" onClick={() => (addZone(shapePoints), setShapePoints([]))}>Finish shape</button>}
         </div>
         {error && <p className="error">{error}</p>}
@@ -391,7 +446,7 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
             })}
 
             {selZone &&
-              connectionsOf(draft, selZone.id).map((other) => {
+              [...new Set(connectionsOf(draft, selZone.id).map((c) => c.id))].map((otherId) => ({ id: otherId })).map((other) => {
                 const oz = floor.zones.find((z) => z.id === other.id);
                 if (!oz) return null;
                 const a = centroid(selZone.polygon);
@@ -454,6 +509,16 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
                 />
               ))}
 
+            {placing && <PlanOverlay placing={placing} m={m} onMove={(e) => {
+              e.stopPropagation();
+              dragRef.current = { type: "plan-move", start: zp.toSvg(e.clientX, e.clientY), orig: placing.at };
+              zp.svgRef.current?.setPointerCapture(e.pointerId);
+            }} onSize={(e) => {
+              e.stopPropagation();
+              dragRef.current = { type: "plan-size" };
+              zp.svgRef.current?.setPointerCapture(e.pointerId);
+            }} />}
+
             {rectPreview && (
               <rect
                 x={Math.min(rectPreview.a.x, rectPreview.b.x)}
@@ -479,16 +544,14 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
 
       {importing && (
         <ImportPlanDialog
-          draft={draft}
           floor={floor}
-          cameras={biCameras}
           onClose={() => setImporting(false)}
-          onApply={(layout, report) => {
-            setHistory((h) => [...h.slice(-49), draftRef.current]);
-            setDraft(layout);
+          onNext={(choice) => {
+            const at = startPlacement(choice.plan, floor, choice.replace);
             setImporting(false);
             setSel(null);
-            setHint(`Imported ${report.rooms} rooms and ${report.doors} doors. Check them over, then press Save map (Undo takes it back).`);
+            setTool("select");
+            setPlacing({ ...choice, at, base: at.scaleX, keepShape: true });
           }}
         />
       )}
@@ -509,6 +572,26 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
               {(Object.keys(DOOR_LOCK_LABELS) as DoorLockType[]).map((t) => <span key={t}><i style={{ background: `var(--lock-${t})` }} />{DOOR_LOCK_LABELS[t]}</span>)}
               <span><i style={{ background: "var(--door-passive)" }} />Lock not recorded</span>
             </div>
+            <div className="section-title">Floor plans on this level</div>
+            {!floor.drawings?.length && <p className="muted small">None yet. Use ⇪ Import floor plan.</p>}
+            <ul className="conn-list">
+              {floor.drawings?.map((dr) => (
+                <li key={dr.building}>
+                  <span>{dr.building}</span>
+                  <button
+                    className="btn-ghost small-btn"
+                    title="Remove this drawing (walls). Its rooms stay; delete them separately if you need to."
+                    onClick={() => {
+                      if (confirm(`Remove the ${dr.building} floor plan drawing from ${floor.name}? Its rooms stay on the map. (Undo works until you save.)`))
+                        commit((d) => (floorOf(d).drawings = (floorOf(d).drawings ?? []).filter((x) => x.building !== dr.building)));
+                    }}
+                  >
+                    Remove drawing
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="muted small">To swap in a new version, use Import floor plan → “Replaces a building”.</p>
             {floor.cameras.length > 0 && (
               <button
                 className="btn-ghost small-btn"
@@ -783,4 +866,26 @@ function wedgePath(p: Point, heading = 0, fov = 70, r = 55) {
   const a = toXY(heading - fov / 2);
   const b = toXY(heading + fov / 2);
   return `M${p.x},${p.y} L${a.x},${a.y} A${r},${r} 0 0 1 ${b.x},${b.y} Z`;
+}
+
+/** The floor plan being lined up: walls and rooms, a frame to drag, and a resize handle. */
+function PlanOverlay({ placing, m, onMove, onSize }: {
+  placing: PlanChoice & { at: Placement };
+  m: number;
+  onMove: (e: React.PointerEvent) => void;
+  onSize: (e: React.PointerEvent) => void;
+}) {
+  const { plan, at } = placing;
+  const to = placer(plan, at);
+  const { w, h } = turnedSize(plan, at.turns);
+  const W = w * at.scaleX, H = h * at.scaleY;
+  const walls = plan.wallLines.map((l) => `M${l.map((p) => { const q = to(p); return `${q.x} ${q.y}`; }).join("L")}`).join("");
+  return (
+    <g className="plan-placing">
+      <rect x={at.x - W / 2} y={at.y - H / 2} width={W} height={H} className="plan-frame" onPointerDown={onMove} onClick={(e) => e.stopPropagation()} />
+      {plan.rooms.map((r) => <polygon key={r.index} points={r.polygon.map((p) => { const q = to(p); return `${q.x},${q.y}`; }).join(" ")} className="plan-room" />)}
+      <path d={walls} className="plan-walls-placing" vectorEffect="non-scaling-stroke" />
+      <circle cx={at.x + W / 2} cy={at.y + H / 2} r={9 * m} className="handle plan-handle" onPointerDown={onSize} onClick={(e) => e.stopPropagation()} />
+    </g>
+  );
 }

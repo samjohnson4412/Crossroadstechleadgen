@@ -422,3 +422,10 @@ button.on-muted { color: var(--muted); }
 .import-report li { margin: 2px 0; }
 .warn-text { color: var(--warn); }
 .lock-chip { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.plan-frame { fill: rgba(61, 139, 253, 0.06); stroke: var(--accent); stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; cursor: move; }
+.plan-room { fill: rgba(61, 139, 253, 0.1); pointer-events: none; }
+.plan-walls-placing { fill: none; stroke: #ff7a1a; stroke-width: 1.6; pointer-events: none; }
+.plan-handle { cursor: nwse-resize; }
+.placing-bar { align-items: center; }
+label.inline-num { flex-direction: row; align-items: center; gap: 4px; margin: 0; font-size: 13px; }
+.inline-num input { width: 64px; }

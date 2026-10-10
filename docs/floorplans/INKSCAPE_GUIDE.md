@@ -52,21 +52,21 @@ Zoom: scroll with `Ctrl`, or press `5` to fit the page. Undo: `Ctrl+Z`.
   | **purple** | locked with a key |
   | **green** | unlocked / no lock |
 
-- Badge doors already in the console (IDentiPASS / UniFi) snap onto the nearest door line when you
-  import, so you don't need to name them in the drawing.
 - Don't rotate or rescale the page once rooms are drawn.
 
 ## Put it on the security map
 
 1. Console → **Edit map** → pick the level → **⇪ Import floor plan**.
-2. Choose the .svg, the building it replaces, and what its camera names start with (e.g. `EB1`).
-3. **Preview** shows what matched (rooms, badge doors, cameras), then **Put on map** → check it →
-   **Save map**.
+2. Choose the .svg, and whether it's a **new building** or **replaces** one already on that level
+   (replacing removes the old rooms and drawing).
+3. Line it up: drag it into place, drag the round corner handle to size it, ⟲/⟳ to turn it 90°.
+   Untick **Keep shape** to stretch it if the scan wasn't to scale. Then **OK — add to map**.
+4. Check it over, then **Save map**.
 
-The plan is lined up using room numbers that are already on the map (E105 ↔ E105), so keep room
-numbers in the labels. Rooms keep their history; cameras and doors move to the new rooms. Cameras
-not on the map yet are placed in the room their name mentions (shown dashed until you drag them to
-the right spot). Re-import any time after a renovation — it replaces that building again.
+Every enclosed area becomes a room named by its label, and every door line a door. Then place
+cameras and link badge doors yourself in Edit map. Cameras, badge doors and stairs that pointed at
+replaced rooms move to the new room in the same spot. To take a drawing off, use **Remove drawing**
+under "Floor plans on this level" in Edit map (its rooms stay).
 
 ## After a renovation
 
