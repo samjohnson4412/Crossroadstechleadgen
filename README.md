@@ -19,6 +19,16 @@ First client: **CCC** (UniFi Access doors, Blue Iris cameras, SaferWatch, SMART 
   pick how (SMART Boards, speakers/horns/phone paging via Algo, SaferWatch, door lockdown), send.
   Each channel reports delivered / failed; the alert stays on every console until **All clear**,
   which goes out on the same channels to the same areas.
+- **Phone view** (`/m`, automatic on phones) — Send alert, Lockdown, cameras, tracking, activity.
+- **Text messages** (Twilio) — contacts on the Settings page choose what they get: Alert Center
+  alerts, critical detections, forced/held doors, watch-list hits, systems/cameras offline.
+- **Detections** — Blue Iris AI alerts with snapshots, rules (weapon, after hours, loitering,
+  restricted areas), review queue, false-alarm stats.
+- **People / badge tracking** — search by name or card, day timeline, path on the map, track a card.
+  **Watch list** — flagged cards raise an alert the moment they're used.
+- **Incidents** — emergency alerts open one automatically; everything is recorded; printable report.
+  **Drill mode** and a **drill log** (`/drills`, CSV export).
+- **Camera health** (`/health`) — offline cameras, cameras not on the map, AI activity and false-alarm rates.
 - **Lockdown** — one button holds every controlled door locked (uses UniFi Access's native emergency lockdown).
 - **Message SMART Boards** — all or selected rooms, info/warning/emergency.
 - **Raise / receive alerts** — SaferWatch alerts arrive by webhook and show as a banner.

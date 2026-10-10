@@ -44,6 +44,8 @@ export function SettingsPage() {
       <header className="topbar">
         <div className="brand"><span className="logo">◆</span> Settings</div>
         <span className="spacer" />
+        <a className="button-link" href="/health">Camera health</a>
+        <a className="button-link" href="/incidents">Incidents</a>
         <a className="button-link" href="/">← Back to console</a>
       </header>
       <main className="settings-main">

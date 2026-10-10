@@ -702,16 +702,77 @@ export class Runtime {
   private vendorCameras = new Map<string, Set<string>>();
   private cameraRefresh?: ReturnType<typeof setInterval>;
 
+  /** Last known status of every camera each server reports: integration → externalId → info. */
+  private cameraStatus = new Map<string, Map<string, { name: string; online: boolean; since: string }>>();
+
   async refreshVendorCameras() {
     for (const [id, r] of this.integrations) {
-      if (!r.instance.cameras || r.simulated || r.health.state === "unconfigured") continue;
+      if (!r.instance.cameras || r.health.state === "unconfigured") continue;
       try {
         const list = await r.instance.cameras.listCameras();
         this.vendorCameras.set(id, new Set(list.map((c) => c.externalId)));
+        const prev = this.cameraStatus.get(id);
+        const next = new Map<string, { name: string; online: boolean; since: string }>();
+        const now = new Date().toISOString();
+        const wentOffline: string[] = [];
+        for (const c of list) {
+          const before = prev?.get(c.externalId);
+          next.set(c.externalId, { name: c.name, online: c.online, since: before && before.online === c.online ? before.since : now });
+          if (prev && before?.online && !c.online) wentOffline.push(c.name);
+        }
+        this.cameraStatus.set(id, next);
+        if (wentOffline.length) this.notify("system", `Camera${wentOffline.length > 1 ? "s" : ""} offline on ${r.config.name}: ${wentOffline.join(", ")}`, `cams-off:${id}:${wentOffline.join(",")}`);
       } catch {
         // keep the last known list
       }
     }
+  }
+
+  /** Admin camera health: every camera from every server, with map placement and AI stats. */
+  cameraHealth() {
+    const weekAgo = Date.now() - 7 * 24 * 3600_000;
+    const placed = new Map([...this.graph.cameras.values()].map((c) => [`${c.source.integration}/${c.source.externalId}`, c]));
+    const rows: {
+      integration: string;
+      server: string;
+      externalId: string;
+      name: string;
+      online: boolean | null;
+      since?: string;
+      onMap: boolean;
+      mapName?: string;
+      room?: string;
+      detections7d: number;
+      real: number;
+      falseAlarms: number;
+      lastDetection?: string;
+    }[] = [];
+    const seen = new Set<string>();
+    const stats = (integration: string, externalId: string) => {
+      const ds = this.detections.filter((d) => d.integration === integration && d.externalCameraId === externalId);
+      return {
+        detections7d: ds.filter((d) => Date.parse(d.at) >= weekAgo).length,
+        real: ds.filter((d) => d.status === "real").length,
+        falseAlarms: ds.filter((d) => d.status === "false").length,
+        lastDetection: ds.at(-1)?.at,
+      };
+    };
+    for (const [integration, cams] of this.cameraStatus) {
+      const server = this.integrations.get(integration)?.config.name ?? integration;
+      for (const [externalId, st] of cams) {
+        const key = `${integration}/${externalId}`;
+        seen.add(key);
+        const cam = placed.get(key);
+        rows.push({ integration, server, externalId, name: st.name, online: st.online, since: st.since, onMap: !!cam, mapName: cam?.name, room: cam ? this.graph.zones.get(cam.covers[0])?.name : undefined, ...stats(integration, externalId) });
+      }
+    }
+    // Cameras on the map that no server reports (renamed or removed in Blue Iris?).
+    for (const [key, cam] of placed) {
+      if (seen.has(key)) continue;
+      rows.push({ integration: cam.source.integration, server: this.integrations.get(cam.source.integration)?.config.name ?? cam.source.integration, externalId: cam.source.externalId, name: cam.name, online: null, onMap: true, mapName: cam.name, room: this.graph.zones.get(cam.covers[0])?.name, ...stats(cam.source.integration, cam.source.externalId) });
+    }
+    const servers = [...this.integrations.values()].filter((r) => r.driver.capabilities.includes("cameras")).map((r) => ({ id: r.config.id, name: r.config.name, health: r.health, simulated: r.simulated }));
+    return { servers, cameras: rows, checkedAt: new Date().toISOString() };
   }
 
   /**

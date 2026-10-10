@@ -395,3 +395,7 @@ button.on-muted { color: var(--muted); }
 .drill-toggle { flex-direction: row; align-items: center; gap: 10px; border: 1px dashed #0e7490; border-radius: 8px; padding: 8px 12px; margin: 4px 0 0; color: var(--text); font-size: 13px; cursor: pointer; }
 .drill-toggle input { width: auto; }
 .drill-toggle.on { background: rgba(14, 116, 144, 0.2); border-style: solid; }
+.health-stats { grid-template-columns: repeat(5, 1fr); }
+.health-stats .bad strong { color: var(--danger); }
+.health-stats .warn strong { color: var(--warn); }
+@media (max-width: 760px) { .health-stats { grid-template-columns: repeat(2, 1fr); } }
