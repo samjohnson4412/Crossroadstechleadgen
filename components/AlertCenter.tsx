@@ -39,12 +39,12 @@ export function scopeLabelFor(site: PublicSite, zoneIds: string[] | null) {
   return parts.length > 4 ? `${parts.slice(0, 3).join(", ")} +${parts.length - 3} more` : parts.join(", ");
 }
 
-export function AlertCenter({ site, state, onClose }: { site: PublicSite; state: LiveState; onClose: () => void }) {
+export function AlertCenter({ site, state, onClose, initialPresetId }: { site: PublicSite; state: LiveState; onClose: () => void; initialPresetId?: string }) {
   const floors = site.buildings.flatMap((b) => b.floors);
   const allZones = useMemo(() => floors.flatMap((f) => f.zones.map((z) => ({ ...z, floorId: f.id }))), [floors]);
   const buildings = [...new Set(allZones.map((z) => z.building).filter((b): b is string => !!b))];
 
-  const [preset, setPreset] = useState<AlertPreset>(ALERT_PRESETS[0]);
+  const [preset, setPreset] = useState<AlertPreset>(ALERT_PRESETS.find((p) => p.id === initialPresetId) ?? ALERT_PRESETS[0]);
   const [title, setTitle] = useState(preset.title);
   const [message, setMessage] = useState(preset.message);
   const [everywhere, setEverywhere] = useState(true);

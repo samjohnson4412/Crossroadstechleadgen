@@ -23,6 +23,7 @@ export type EventType =
   | "door.forced"
   | "door.held"
   | "person.detected"
+  | "object.detected"
   | "motion.detected"
   | "alert.raised"
   | "alert.cleared"
@@ -46,6 +47,8 @@ export interface SecurityEvent {
   /** Who: a credential/person id from access control, when known. */
   person?: { id: string; name?: string };
   appearance?: Appearance;
+  /** AI labels, e.g. [{label: "person", confidence: 87}]. */
+  labels?: { label: string; confidence?: number }[];
   /** Vendor payload, kept for audit and debugging. */
   raw?: unknown;
 }
@@ -62,6 +65,7 @@ export interface RawEvent {
   zoneId?: string;
   person?: { id: string; name?: string };
   appearance?: Appearance;
+  labels?: { label: string; confidence?: number }[];
   raw?: unknown;
 }
 

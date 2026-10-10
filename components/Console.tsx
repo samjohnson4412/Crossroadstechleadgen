@@ -8,13 +8,15 @@ import type { PublicSite, SiteConfig } from "@/lib/core/site";
 import { lastSighting } from "@/lib/tracking/tracker";
 import { CameraFeed } from "./CameraFeed";
 import { ActiveAlerts, AlertCenter } from "./AlertCenter";
+import { CriticalDetections, DetectionsPanel, needsReview } from "./Detections";
 import { MapEditor } from "./MapEditor";
-import { MapView, type Selection } from "./MapView";
+import { PeoplePanel, type BadgePath } from "./People";
+import { MapView, type Selection, type TrackOverlay } from "./MapView";
 import { AllCamerasDialog, describeDoor, DoorControls, EditableName, EventFeed, indexSite, IntegrationsDialog, LockdownDialog, TagDialog, useAction, type SiteIndex } from "./Panels";
 import { ago, buildOverlay, FollowView, trackColor, TrackSide, useNow } from "./TrackView";
 import { send, useLive } from "./useLive";
 
-type ModalKind = { kind: "cameras" } | { kind: "lockdown" } | { kind: "alert" } | { kind: "integrations" } | { kind: "tag"; cameraId?: string } | null;
+type ModalKind = { kind: "cameras" } | { kind: "detections" } | { kind: "people" } | { kind: "lockdown" } | { kind: "alert"; presetId?: string } | { kind: "integrations" } | { kind: "tag"; cameraId?: string } | null;
 
 export function Console() {
   const { site, state, connected } = useLive();
@@ -35,6 +37,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
   const [hideDetections, setHideDetections] = useState(true);
   const [editing, setEditing] = useState(false);
   const [showBackground, setShowBackground] = useState(true);
+  const [badgePath, setBadgePath] = useState<BadgePath | null>(null);
 
   // Background preference is per-viewer.
   useEffect(() => {
@@ -54,7 +57,12 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
   const following = activeTracks.find((t) => t.id === followId) ?? null;
   const highlighted = activeTracks.find((t) => t.id === highlightId) ?? activeTracks.at(-1) ?? null;
   const floor = floors.find((f) => f.id === floorId)!;
-  const overlay = highlighted ? buildOverlay(highlighted, floor, idx, graph, trackColor(state.tracks, highlighted.id)) : null;
+  const overlay = badgePath
+    ? badgeOverlay(badgePath, floor.id, idx)
+    : highlighted
+      ? buildOverlay(highlighted, floor, idx, graph, trackColor(state.tracks, highlighted.id))
+      : null;
+  const reviewCount = state.detections.filter(needsReview).length;
 
   const select = (s: Selection) => {
     setSelection(s);
@@ -100,6 +108,10 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
           {unhealthy ? `${unhealthy} integration(s) offline` : sims ? `${sims} simulated` : "All systems OK"}
         </button>
         <button onClick={() => setModal({ kind: "cameras" })}>All cameras</button>
+        <button onClick={() => setModal({ kind: "people" })}>People</button>
+        <button className={reviewCount ? "btn-warn" : ""} onClick={() => setModal({ kind: "detections" })}>
+          Detections{reviewCount > 0 && <span className="count">{reviewCount}</span>}
+        </button>
         <button onClick={() => setModal({ kind: "tag" })}>Tag person</button>
         <button className="btn-alert" onClick={() => setModal({ kind: "alert" })}>🚨 Alert</button>
         <a className="button-link" href="/settings" title="Connection settings">⚙</a>
@@ -110,6 +122,13 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
 
       {state.lockdown && <div className="banner danger">CAMPUS LOCKDOWN ACTIVE — all controlled doors held locked</div>}
       <ActiveAlerts state={state} />
+      <CriticalDetections state={state} idx={idx} onReview={() => setModal({ kind: "detections" })} onLockdown={() => setModal({ kind: "alert", presetId: "lockdown" })} />
+      {badgePath && (
+        <div className="banner path-banner">
+          Badge path: {badgePath.label} · {badgePath.doorIds.length} swipe(s)
+          <button className="btn-ghost small-btn" onClick={() => setBadgePath(null)}>Clear</button>
+        </div>
+      )}
       {activeAlerts.map((a) => (
         <div key={a.id} className="banner warn">⚠ {a.summary} · {new Date(a.at).toLocaleTimeString()}</div>
       ))}
@@ -174,13 +193,49 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
 
       {modal?.kind === "cameras" && <AllCamerasDialog state={state} idx={idx} onClose={() => setModal(null)} onShowOnMap={(id) => (setEditing(false), setFollowId(null), select({ kind: "camera", id }))} />}
       {modal?.kind === "lockdown" && <LockdownDialog active={state.lockdown} onClose={() => setModal(null)} />}
-      {modal?.kind === "alert" && <AlertCenter site={site} state={state} onClose={() => setModal(null)} />}
+      {modal?.kind === "alert" && <AlertCenter site={site} state={state} initialPresetId={modal.presetId} onClose={() => setModal(null)} />}
+      {modal?.kind === "detections" && (
+        <DetectionsPanel
+          state={state}
+          idx={idx}
+          onClose={() => setModal(null)}
+          onShowCamera={(id) => (setModal(null), setEditing(false), setFollowId(null), select({ kind: "camera", id }))}
+          onTrack={(cameraId) => setModal({ kind: "tag", cameraId })}
+          onLockdown={() => setModal({ kind: "alert", presetId: "lockdown" })}
+        />
+      )}
+      {modal?.kind === "people" && (
+        <PeoplePanel
+          idx={idx}
+          onClose={() => setModal(null)}
+          onShowPath={(p) => {
+            setBadgePath(p);
+            setFollowId(null);
+            const firstFloor = p.doorIds.map((d) => idx.doors.get(d)?.floorId).find(Boolean);
+            if (firstFloor) setFloorId(firstFloor);
+          }}
+          onFollow={(id) => (setBadgePath(null), setFollowId(id))}
+        />
+      )}
       {modal?.kind === "integrations" && <IntegrationsDialog state={state} onClose={() => setModal(null)} />}
       {modal?.kind === "tag" && (
         <TagDialog camera={modal.cameraId ? idx.cameras.get(modal.cameraId) : undefined} onClose={() => setModal(null)} onCreated={(id) => setFollowId(id)} />
       )}
     </div>
   );
+}
+
+/** Map overlay for a person's badge swipes: a trail through the doors they used, in order. */
+function badgeOverlay(path: BadgePath, floorId: string, idx: SiteIndex): TrackOverlay {
+  const points = path.doorIds.map((id) => idx.doors.get(id)).filter((d) => d && d.floorId === floorId).map((d) => d!.position);
+  const lastDoor = idx.doors.get(path.doorIds[path.doorIds.length - 1]);
+  return {
+    color: "#22c55e",
+    trail: points,
+    lastZoneId: undefined,
+    lastPoint: lastDoor && lastDoor.floorId === floorId ? lastDoor.position : undefined,
+    predictedZoneIds: [],
+  };
 }
 
 /** Alerts coming in from outside systems (e.g. a SaferWatch panic) not yet cleared. Console-sent alerts have their own banners. */

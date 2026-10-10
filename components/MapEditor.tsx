@@ -468,6 +468,16 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
               <li>Delete key removes the selected item. Ctrl+Z undoes.</li>
             </ul>
             <p className="muted small">{floor.zones.length} rooms · {floor.cameras.length} cameras · {floor.doors.length} doors on this level</p>
+            {floor.cameras.length > 0 && (
+              <button
+                className="btn-ghost small-btn"
+                onClick={() => {
+                  if (confirm(`Remove all ${floor.cameras.length} cameras from ${floor.name}? (Undo works until you save.)`)) commit((d) => (floorOf(d).cameras = []));
+                }}
+              >
+                Remove all cameras on this level
+              </button>
+            )}
             {unplaced.length > 0 && (
               <>
                 <div className="section-title">Blue Iris cameras not on the map yet <span className="count">{unplaced.length}</span></div>

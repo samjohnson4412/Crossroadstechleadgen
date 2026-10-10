@@ -1,4 +1,4 @@
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { sites } from "../../config/sites/index.ts";
 import { drivers } from "../integrations/registry.ts";
@@ -6,6 +6,8 @@ import { createSimulatedIntegration, simWorldFor } from "../integrations/simulat
 import type { Actor, DisplayMessage, DoorStatus, Integration, IntegrationDriver, IntegrationHealth, StreamInfo } from "../integrations/types.ts";
 import { Tracker } from "../tracking/tracker.ts";
 import type { Alert, AlertChannel, AlertDelivery, AlertSpec } from "./alerts.ts";
+import { DEFAULT_RULES, evaluateRules, topSeverity, type Detection, type DetectionRule } from "./detections.ts";
+import { appendLine, dataDir, pruneFolder, readJson, readJsonLines, siteFile, writeJsonSoon } from "./files.ts";
 import { newId, type RawEvent, type SecurityEvent } from "./events.ts";
 import { SiteGraph } from "./graph.ts";
 import type { AuditEntry, IntegrationView, LiveMessage, LiveState } from "./live.ts";
@@ -16,6 +18,19 @@ import type { IntegrationConfig, SiteConfig } from "./site.ts";
 
 const MAX_EVENTS = 300;
 const MAX_AUDIT = 200;
+const MAX_DETECTIONS = 500;
+const MAX_BADGES = 50_000;
+
+export interface BadgeEvent {
+  at: string;
+  cardId: string;
+  name?: string;
+  doorId?: string;
+  doorName?: string;
+  zoneId?: string;
+  granted: boolean;
+  action: string;
+}
 
 export type DoorAction = "unlock" | "hold-unlocked" | "hold-locked" | "reset";
 
@@ -45,6 +60,10 @@ export class Runtime {
   readonly events: SecurityEvent[] = [];
   readonly audit: AuditEntry[] = [];
   readonly alerts: Alert[] = [];
+  readonly detections: Detection[] = readJson<Detection[]>(siteFile("detections"), []);
+  rules: DetectionRule[] = readJson<DetectionRule[]>(siteFile("rules"), DEFAULT_RULES);
+  /** Badge swipes (granted and denied) — kept on disk so "where has this person been" survives restarts. */
+  readonly badges: BadgeEvent[] = readJsonLines<BadgeEvent>(siteFile("badges", "jsonl"), MAX_BADGES);
   lockdown = false;
   private readonly listeners = new Set<(msg: LiveMessage) => void>();
   private readonly cameraByExternal = new Map<string, string>();
@@ -143,6 +162,9 @@ export class Runtime {
     this.audit.push(...old.audit);
     this.lockdown = old.lockdown;
     this.alerts.push(...old.alerts);
+    this.detections.splice(0, this.detections.length, ...old.detections);
+    this.badges.splice(0, this.badges.length, ...old.badges);
+    this.rules = old.rules;
     for (const track of old.tracker.tracks.values()) {
       track.sightings = track.sightings.filter((s) => this.graph.zones.has(s.zoneId));
       track.suggestions = [];
@@ -208,6 +230,7 @@ export class Runtime {
       audit: this.audit.slice(-50),
       lockdown: this.lockdown,
       alerts: this.alerts.slice(-20),
+      detections: this.detections.slice(-100),
       sim: this.simulating ? simWorldFor(this.graph).view() : null,
       authConfigured,
     };
@@ -234,10 +257,163 @@ export class Runtime {
       zoneId,
       person: raw.person,
       appearance: raw.appearance,
+      labels: raw.labels,
       raw: raw.raw,
     };
     this.pushEvent(event);
+    if (raw.labels?.length && raw.externalCameraId) this.recordDetection(integrationId, raw.externalCameraId, event);
+    if (raw.person && (event.type === "access.granted" || event.type === "access.denied")) this.recordBadge(event, raw);
   }
+
+  // ---------- detections ----------
+
+  private recordDetection(integrationId: string, externalCameraId: string, event: SecurityEvent) {
+    const cam = event.cameraId ? this.graph.cameras.get(event.cameraId) : undefined;
+    const det: Detection = {
+      id: newId("det"),
+      at: event.at,
+      integration: integrationId,
+      externalCameraId,
+      cameraId: event.cameraId,
+      zoneId: event.zoneId,
+      labels: event.labels ?? [],
+      summary: `${cam?.name ?? externalCameraId}: ${(event.labels ?? []).map((l) => `${l.label}${l.confidence !== undefined ? ` ${Math.round(l.confidence)}%` : ""}`).join(", ")}`,
+      hasSnapshot: false,
+      ruleHits: [],
+      severity: "info",
+      status: "new",
+    };
+    det.ruleHits = evaluateRules(this.rules, det, this.detections.slice(-200), cam?.covers ?? []);
+    det.severity = det.ruleHits.length ? topSeverity(det.ruleHits) : "info";
+    this.detections.push(det);
+    if (this.detections.length > MAX_DETECTIONS) this.detections.splice(0, this.detections.length - MAX_DETECTIONS);
+    this.saveDetections();
+    this.broadcast({ type: "detection", detection: det });
+    if (det.ruleHits.length) {
+      this.pushEvent({
+        id: newId("evt"),
+        type: "object.detected",
+        at: det.at,
+        severity: det.severity === "critical" ? "critical" : "warning",
+        integration: "detections",
+        cameraId: det.cameraId,
+        zoneId: det.zoneId,
+        summary: `${det.ruleHits.map((h) => h.name).join(", ")} — ${det.summary}`,
+      });
+    }
+    // Save a still for review (best effort, doesn't hold anything up).
+    const cams = this.integrations.get(integrationId)?.instance.cameras;
+    if (cams?.snapshot) {
+      cams
+        .snapshot(externalCameraId, 960)
+        .then(async (res) => {
+          if (!res.ok) return;
+          const dir = dataDir("detections");
+          await mkdir(dir, { recursive: true });
+          await writeFile(`${dir}/${det.id}.jpg`, Buffer.from(await res.arrayBuffer()));
+          det.hasSnapshot = true;
+          this.saveDetections();
+          this.broadcast({ type: "detection", detection: det });
+          await pruneFolder(dir, MAX_DETECTIONS);
+        })
+        .catch(() => {});
+    }
+  }
+
+  private saveDetections() {
+    writeJsonSoon(siteFile("detections"), () => this.detections);
+  }
+
+  async detectionSnapshot(id: string): Promise<Buffer | null> {
+    if (!/^det_[a-z0-9]+$/.test(id)) return null;
+    return readFile(dataDir("detections", `${id}.jpg`)).catch(() => null);
+  }
+
+  async reviewDetection(id: string, status: "real" | "false" | "new", actor: Actor) {
+    const det = this.detections.find((d) => d.id === id);
+    if (!det) throw new Error("Detection not found");
+    det.status = status;
+    det.reviewedBy = status === "new" ? undefined : actor.name;
+    det.reviewedAt = status === "new" ? undefined : new Date().toISOString();
+    this.saveDetections();
+    this.broadcast({ type: "detection", detection: det });
+    if (status !== "new") this.audit.push({ at: det.reviewedAt!, actor: actor.name, action: `detection.${status}`, target: det.summary, ok: true });
+    return det;
+  }
+
+  async saveRules(rules: DetectionRule[], actor: Actor) {
+    for (const r of rules) {
+      if (!r.id || !r.name?.trim()) throw new Error("Every rule needs a name");
+      if (!["info", "warning", "critical"].includes(r.severity)) throw new Error(`Rule "${r.name}": bad severity`);
+      for (const z of r.zoneIds ?? []) if (!this.graph.zones.has(z)) throw new Error(`Rule "${r.name}": unknown area ${z}`);
+    }
+    await this.audited(actor, "rules.save", `${rules.length} rule(s)`, async () => {
+      this.rules = rules.map((r) => ({ ...r, labels: r.labels.map((l) => l.trim().toLowerCase()).filter(Boolean), count: Math.max(1, r.count || 1), minutes: Math.max(1, r.minutes || 1) }));
+      writeJsonSoon(siteFile("rules"), () => this.rules);
+    });
+  }
+
+  /** Feed a made-up detection through the real pipeline (for checking rules and alerts). */
+  testDetection(cameraId: string, labels: { label: string; confidence?: number }[]) {
+    const cam = this.graph.cameras.get(cameraId);
+    if (!cam) throw new Error("Pick a camera on the map");
+    this.ingest(cam.source.integration, {
+      type: labels.some((l) => l.label === "person") ? "person.detected" : "object.detected",
+      severity: "info",
+      summary: `TEST detection: ${labels.map((l) => l.label).join(", ")}`,
+      externalCameraId: cam.source.externalId,
+      labels,
+    });
+  }
+
+  // ---------- badges ----------
+
+  private recordBadge(event: SecurityEvent, raw: RawEvent) {
+    const b: BadgeEvent = {
+      at: event.at,
+      cardId: raw.person!.id,
+      name: raw.person!.name,
+      doorId: event.doorId,
+      doorName: event.doorId ? this.graph.doors.get(event.doorId)?.name : raw.externalDoorId,
+      zoneId: event.zoneId,
+      granted: event.type === "access.granted",
+      action: raw.summary,
+    };
+    this.badges.push(b);
+    if (this.badges.length > MAX_BADGES) this.badges.splice(0, this.badges.length - MAX_BADGES);
+    appendLine(siteFile("badges", "jsonl"), b).catch(() => {});
+  }
+
+  /** People who badged, most recent first; `q` matches name or card number. */
+  searchPeople(q: string) {
+    const needle = q.trim().toLowerCase();
+    const today = new Date().toDateString();
+    const people = new Map<string, { cardId: string; name?: string; lastAt: string; lastDoor?: string; lastZoneId?: string; todayCount: number; denied: number }>();
+    for (let i = this.badges.length - 1; i >= 0; i--) {
+      const b = this.badges[i];
+      if (needle && !b.cardId.toLowerCase().includes(needle) && !(b.name ?? "").toLowerCase().includes(needle)) continue;
+      let p = people.get(b.cardId);
+      if (!p) {
+        if (people.size >= 50) continue;
+        p = { cardId: b.cardId, name: b.name, lastAt: b.at, lastDoor: b.doorName, lastZoneId: b.zoneId, todayCount: 0, denied: 0 };
+        people.set(b.cardId, p);
+      }
+      if (!p.name && b.name) p.name = b.name;
+      if (new Date(b.at).toDateString() === today) {
+        p.todayCount++;
+        if (!b.granted) p.denied++;
+      }
+    }
+    return [...people.values()];
+  }
+
+  /** One card's swipes on a day (local date "YYYY-MM-DD"; default today), oldest first. */
+  personHistory(cardId: string, date?: string) {
+    const day = date ? new Date(`${date}T00:00:00`) : new Date();
+    const key = day.toDateString();
+    return this.badges.filter((b) => b.cardId === cardId && new Date(b.at).toDateString() === key);
+  }
+
 
   private eventDoorTimers = new Map<string, ReturnType<typeof setTimeout>>();
 

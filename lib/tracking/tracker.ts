@@ -103,7 +103,7 @@ export class Tracker {
     this.graph = graph;
   }
 
-  create(input: { label: string; description?: string; appearance?: Appearance; credentialIds?: string[]; by: string; cameraId?: string; zoneId?: string }): Track {
+  create(input: { label: string; description?: string; appearance?: Appearance; credentialIds?: string[]; by: string; cameraId?: string; zoneId?: string; doorId?: string }): Track {
     const track: Track = {
       id: newId("trk"),
       label: input.label,
@@ -117,7 +117,7 @@ export class Tracker {
       suggestions: [],
     };
     this.tracks.set(track.id, track);
-    if (input.cameraId || input.zoneId) this.addSighting(track.id, { cameraId: input.cameraId, zoneId: input.zoneId }, "operator", input.by);
+    if (input.cameraId || input.zoneId || input.doorId) this.addSighting(track.id, { cameraId: input.cameraId, zoneId: input.zoneId, doorId: input.doorId }, input.doorId ? "access" : "operator", input.by);
     return track;
   }
 

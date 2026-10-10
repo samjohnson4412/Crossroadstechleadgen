@@ -3,6 +3,7 @@
  * (Types only — safe to import from client components.)
  */
 import type { Alert } from "./alerts.ts";
+import type { Detection } from "./detections.ts";
 import type { SecurityEvent } from "./events.ts";
 import type { DoorStatus, IntegrationHealth, StreamInfo } from "../integrations/types.ts";
 import type { SimActorView } from "../integrations/simulator.ts";
@@ -37,6 +38,7 @@ export interface LiveState {
   audit: AuditEntry[];
   lockdown: boolean;
   alerts: Alert[];
+  detections: Detection[];
   sim: SimActorView[] | null;
   authConfigured: boolean;
 }
@@ -49,6 +51,7 @@ export type LiveMessage =
   | { type: "audit"; entry: AuditEntry }
   | { type: "lockdown"; active: boolean }
   | { type: "alert"; alert: Alert }
+  | { type: "detection"; detection: Detection }
   | { type: "sim"; actors: SimActorView[] }
   /** Site layout or names changed; reload /api/site. */
   | { type: "site" };

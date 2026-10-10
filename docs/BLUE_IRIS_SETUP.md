@@ -37,3 +37,20 @@ lists the cameras Blue Iris reports.
 Fill in `BLUEIRIS2_URL`, `BLUEIRIS2_USER`, `BLUEIRIS2_PASSWORD` in `.env.local` and restart. Until then it shows
 as "not set up" in the integrations window (it is not simulated). Its cameras then appear in **All cameras** and in
 Edit map's "not on the map yet" list alongside the first server's.
+
+## Sending AI detections to the console (Detections queue)
+
+For each camera with AI (CodeProject.AI) turned on, in Blue Iris:
+
+1. Camera properties → **Alerts** → **On alert…** → **+** → **Web request or MQTT**.
+2. URL (server 1): `http://192.168.1.142:3100/api/integrations/cameras/webhook`
+   URL (server 2): `http://192.168.1.142:3100/api/integrations/cameras2/webhook`
+   (add `?token=<WEBHOOK_TOKEN>` if you set one)
+3. Method **POST**, content type **application/json**, body:
+   `{"camera":"&CAM","memo":"&MEMO","type":"&TYPE"}`
+4. Make sure the alert only fires on AI-confirmed objects (Trigger → Artificial Intelligence → "To confirm":
+   `person,car,...` plus any weapon labels your model provides).
+
+&MEMO carries labels like `person:87%`. Each one becomes a detection with a saved snapshot, checked against the
+rules in **Detections → Rules** (weapon, person after hours, loitering, restricted areas). Use **Detections → Test**
+to try a rule without waiting for a real alert.

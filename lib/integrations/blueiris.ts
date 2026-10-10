@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { parseLabels } from "../core/detections.ts";
 import type { IntegrationDriver } from "./types.ts";
 
 /**
@@ -170,12 +171,14 @@ export const blueIrisDriver: IntegrationDriver = {
         const body = (await request.json().catch(() => ({}))) as { camera?: string; memo?: string; type?: string };
         if (!body.camera) return Response.json({ error: "camera required" }, { status: 400 });
         const memo = body.memo ?? "";
-        const isPerson = /person/i.test(memo);
+        const labels = parseLabels(memo);
+        const isPerson = labels.some((l) => l.label === "person");
         ctx.emit({
-          type: isPerson ? "person.detected" : "motion.detected",
+          type: isPerson ? "person.detected" : labels.length ? "object.detected" : "motion.detected",
           severity: "info",
-          summary: isPerson ? `Person detected (${memo})` : `Motion${memo ? ` (${memo})` : ""}`,
+          summary: labels.length ? `Detected ${labels.map((l) => `${l.label}${l.confidence !== undefined ? ` ${Math.round(l.confidence)}%` : ""}`).join(", ")}` : `Motion${memo ? ` (${memo})` : ""}`,
           externalCameraId: body.camera,
+          labels,
           raw: body,
         });
         return Response.json({ ok: true });

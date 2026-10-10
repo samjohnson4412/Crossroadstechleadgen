@@ -24,6 +24,10 @@ function apply(state: LiveState, msg: LiveMessage): LiveState {
       const others = state.alerts.filter((a) => a.id !== msg.alert.id);
       return { ...state, alerts: [...others, msg.alert].sort((a, b) => a.at.localeCompare(b.at)).slice(-20) };
     }
+    case "detection": {
+      const others = state.detections.filter((d) => d.id !== msg.detection.id);
+      return { ...state, detections: [...others, msg.detection].sort((a, b) => a.at.localeCompare(b.at)).slice(-100) };
+    }
     case "sim":
       return { ...state, sim: msg.actors };
     case "site":
