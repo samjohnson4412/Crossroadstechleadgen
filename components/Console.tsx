@@ -177,6 +177,14 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
                 <span><i className="lg danger" />Forced / open while locked</span>
                 <span><i className="lg cam" />Camera</span>
                 <span><i className="lg disp" />SMART Board</span>
+                {floor.doors.some((d) => !d.source) && (
+                  <span className="muted">
+                    Doors:{" "}
+                    {([["access", "Badge"], ["keypad", "Keypad"], ["key", "Key"], ["none", "Unlocked"]] as const).map(([t, label]) => (
+                      <span key={t} style={{ marginRight: 8 }}><i className="lg" style={{ background: `var(--lock-${t})`, borderRadius: "50%" }} />{label}</span>
+                    ))}
+                  </span>
+                )}
                 {state.sim && (
                   <label className="toggle">
                     <input type="checkbox" checked={showSim} onChange={(e) => setShowSim(e.target.checked)} /> Show simulated people

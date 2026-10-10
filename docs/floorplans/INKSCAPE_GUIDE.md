@@ -39,16 +39,39 @@ Zoom: scroll with `Ctrl`, or press `5` to fit the page. Undo: `Ctrl+Z`.
 - **Walls on Walls, doors on Doors.** Draw walls solid, straight through doorways — don't leave gaps.
   Then on the **Doors** layer, draw a **short line over the wall where the door is** (Pen `B`: click
   one side of the door opening, `Ctrl`+click the other side, `Enter`). It comes out thick and red
-  automatically. Make it about as long as the door is wide; double doors = one longer line.
-  The console reads each red line as a door connecting the two rooms on either side of it.
-- Optional: put a door's name next to its red line on the **Labels** layer (e.g. "WC West Lobby")
-  if it's a badge/controlled door, so it can be matched to IDentiPASS / UniFi Access.
+  automatically. Make it about as long as the door is wide (or draw it across the wall — both work);
+  double doors = one line. The console reads each line as a door between the rooms on either side.
+- **Door type = line color** (optional — you can also set it per door in the console's Edit map).
+  Select the line → `Shift+Ctrl+F` (Fill & Stroke) → **Stroke paint**:
+
+  | Color | Door type |
+  |---|---|
+  | red or black | not recorded yet |
+  | **blue** | access control (badge reader) |
+  | **orange / yellow** | keypad lock |
+  | **purple** | locked with a key |
+  | **green** | unlocked / no lock |
+
+- Badge doors already in the console (IDentiPASS / UniFi) snap onto the nearest door line when you
+  import, so you don't need to name them in the drawing.
 - Don't rotate or rescale the page once rooms are drawn.
+
+## Put it on the security map
+
+1. Console → **Edit map** → pick the level → **⇪ Import floor plan**.
+2. Choose the .svg, the building it replaces, and what its camera names start with (e.g. `EB1`).
+3. **Preview** shows what matched (rooms, badge doors, cameras), then **Put on map** → check it →
+   **Save map**.
+
+The plan is lined up using room numbers that are already on the map (E105 ↔ E105), so keep room
+numbers in the labels. Rooms keep their history; cameras and doors move to the new rooms. Cameras
+not on the map yet are placed in the room their name mentions (shown dashed until you drag them to
+the right spot). Re-import any time after a renovation — it replaces that building again.
 
 ## After a renovation
 
 Open the file → move/delete walls with `S` or `N` → fix the label if the room changed → **Save**.
-Then import it into the console so the security map matches (Import floor plan — coming next).
+Then import it again (above) so the security map matches.
 
 ## Printing
 

@@ -42,6 +42,16 @@ Moving CCC from Blue Iris to UniFi Protect cameras = write a `unifi-protect` dri
 | `smart-displays` | POSTs messages to a configurable endpoint. **Pending how CCC's SMART Boards are managed** (SMART Remote Management or a relay). |
 | `simulator` | Stands in for any of the above. |
 
+## Floor plans
+
+Detailed plans are drawn in Inkscape on `docs/floorplans/floorplan-template.svg` and imported
+from the map editor (`lib/floorplan/`): `svg.ts` reads the Walls / Dividers / Doors / Labels
+layers, `rooms.ts` turns enclosed areas into rooms and door lines into connections, and
+`importPlan.ts` fits the plan onto the map (quarter turns + stretch, from room numbers shared with
+the old rooms), keeps matched room ids, moves cameras/doors/passages over, and places cameras by
+name. The walls are stored with the floor (`Floor.drawings`) and drawn over the background.
+Doors carry a `lockType` (badge / keypad / key / unlocked).
+
 ## Tracking: how "follow a suspect" works
 
 The thing other products miss is that cameras aren't related to each other. Here, the

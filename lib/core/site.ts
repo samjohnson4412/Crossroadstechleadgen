@@ -37,6 +37,8 @@ export interface Zone {
   polygon: Point[];
   /** Which building it's in, for display ("Education", "Sanctuary", ...). */
   building?: string;
+  /** Where to write its name, when the middle of the shape is a bad spot (L- or U-shaped halls). */
+  labelAt?: Point;
 }
 
 export interface CameraPlacement {
@@ -54,6 +56,15 @@ export interface CameraPlacement {
   placeholder?: boolean;
 }
 
+/** How a door is secured. Doors wired to an access control system are "access". */
+export type DoorLockType = "access" | "keypad" | "key" | "none";
+export const DOOR_LOCK_LABELS: Record<DoorLockType, string> = {
+  access: "Access control (badge)",
+  keypad: "Keypad lock",
+  key: "Locked (key)",
+  none: "Unlocked / no lock",
+};
+
 export interface DoorPlacement {
   id: string;
   name: string;
@@ -64,6 +75,12 @@ export interface DoorPlacement {
   /** Present when the door is wired to an access control system. */
   source?: DeviceRef;
   placeholder?: boolean;
+  /** How it's secured; unset = not recorded yet. A door with a source is access-controlled. */
+  lockType?: DoorLockType;
+}
+
+export function doorLockType(door: DoorPlacement): DoorLockType | undefined {
+  return door.source ? "access" : door.lockType;
 }
 
 export interface DisplayPlacement {
@@ -72,6 +89,15 @@ export interface DisplayPlacement {
   position: Point;
   zoneId: string;
   source: DeviceRef;
+}
+
+/** A building's detailed floor plan, drawn over the background (imported from Inkscape). */
+export interface FloorDrawing {
+  building: string;
+  /** SVG path data, in floor units: the building outline (hides the photo underneath)… */
+  outline: string;
+  /** …and its walls. */
+  walls: string;
 }
 
 export interface Floor {
@@ -85,6 +111,7 @@ export interface Floor {
   cameras: CameraPlacement[];
   doors: DoorPlacement[];
   displays: DisplayPlacement[];
+  drawings?: FloorDrawing[];
 }
 
 export interface Building {

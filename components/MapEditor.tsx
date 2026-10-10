@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { closestOnSegment, distanceToOutline, pointInPolygon, polygonsTouch } from "@/lib/core/geometry";
 import type { SiteLayout } from "@/lib/core/overrides";
-import { bounds, centroid, type CameraPlacement, type DoorPlacement, type Floor, type Point, type Zone, type ZoneKind } from "@/lib/core/site";
+import { bounds, centroid, DOOR_LOCK_LABELS, type CameraPlacement, type DoorLockType, type DoorPlacement, type Floor, type Point, type Zone, type ZoneKind } from "@/lib/core/site";
+import { ImportPlanDialog } from "./ImportPlan";
+import { drawnBuildings, lockColor, markerScale, PlanDrawings, zoneLabel } from "./MapView";
 import { useAction } from "./Panels";
 import { send } from "./useLive";
 import { useZoomPan, ZoomButtons } from "./useZoomPan";
@@ -63,6 +65,7 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
   /** The click that ends a draw/drag/placement must not also clear the selection. */
   const ignoreClick = useRef(false);
   const [rectPreview, setRectPreview] = useState<{ a: Point; b: Point } | null>(null);
+  const [importing, setImporting] = useState(false);
   const { busy, error, run } = useAction();
 
   const floors = draft.buildings.flatMap((b) => b.floors);
@@ -313,6 +316,9 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
   const selDisplay = sel?.kind === "display" ? floor.displays.find((d) => d.id === sel.id) : undefined;
   const bg = showBackground && floor.background;
   const hr = 5 * k * Math.max(0.5, zp.vb.w / floor.width);
+  const m = markerScale(floor, zp.vb.w);
+  const ppu = (zp.svgRef.current?.clientWidth || 900) / zp.vb.w;
+  const drawn = drawnBuildings(floor);
 
   const TOOLS: { id: Tool; label: string; help: string }[] = [
     { id: "select", label: "Select / move", help: "Click to select. Drag rooms, corners, cameras and doors. Double-click a room's edge to add a corner; right-click a corner to remove it." },
@@ -333,6 +339,7 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
             </button>
           ))}
           <span className="spacer" />
+          <button onClick={() => setImporting(true)} title="Replace a building on this level with a floor plan drawn in Inkscape">⇪ Import floor plan</button>
           <button disabled={!history.length} onClick={undo}>↶ Undo</button>
           <button onClick={onDone} disabled={busy}>Cancel</button>
           <button className="btn-primary" onClick={save} disabled={busy}>Save map</button>
@@ -357,24 +364,25 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
           >
             {bg && <image href={floor.background} x={0} y={0} width={floor.width} height={floor.height} className="map-bg" />}
             {!bg && <rect x={0} y={0} width={floor.width} height={floor.height} className="editor-canvas" />}
+            <PlanDrawings floor={floor} />
 
             {floor.zones.map((z) => {
-              const c = centroid(z.polygon);
-              const b = bounds(z.polygon);
-              const fontSize = Math.min(13 * k, (b.w * 0.9) / Math.max(4, z.name.length * 0.58), b.h * 0.45);
+              const label = zoneLabel(z, k, ppu);
               const selected = sel?.kind === "zone" && sel.id === z.id;
+              const isDrawn = drawn.has((z.building ?? "").toLowerCase());
               return (
-                <g key={z.id} className="zone">
+                <g key={z.id} className={`zone${isDrawn ? " zone-drawn" : ""}`}>
                   <polygon
                     points={z.polygon.map((p) => `${p.x},${p.y}`).join(" ")}
                     className={`zone-shape zone-${z.kind}${selected ? " selected" : ""}`}
-                    strokeWidth={2 * k}
+                    strokeWidth={isDrawn ? 1.5 : 2 * k}
+                    vectorEffect={isDrawn ? "non-scaling-stroke" : undefined}
                     onPointerDown={grab({ kind: "zone", id: z.id }, (start) => ({ type: "zone", zoneId: z.id, start, orig: z.polygon }))}
                     onDoubleClick={selected ? insertCorner(z) : undefined}
                     onClick={(e) => e.stopPropagation()}
                   />
-                  {fontSize >= 3.5 && (
-                    <text x={c.x} y={c.y} className="zone-label" fontSize={fontSize}>
+                  {label.visible && (
+                    <text x={label.x} y={label.y} className="zone-label" fontSize={label.fontSize}>
                       {z.name}
                     </text>
                   )}
@@ -388,32 +396,45 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
                 if (!oz) return null;
                 const a = centroid(selZone.polygon);
                 const b = centroid(oz.polygon);
-                return <line key={other.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="conn-line" strokeWidth={2 * k} />;
+                return <line key={other.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="conn-line" strokeWidth={2 * m} />;
               })}
 
             {floor.cameras.map((cam) => (
               <g key={cam.id} className={`camera${cam.placeholder ? " placeholder" : ""}`} onPointerDown={grab({ kind: "camera", id: cam.id }, (start) => ({ type: "camera", id: cam.id, start, orig: cam.position }))} onClick={(e) => e.stopPropagation()}>
-                <path d={wedgePath(cam.position, cam.heading, cam.fov, 55 * k)} className={`fov${sel?.id === cam.id ? " selected" : ""}`} />
-                <g transform={`translate(${cam.position.x} ${cam.position.y}) scale(${k})`}>
+                <path d={wedgePath(cam.position, cam.heading, cam.fov, 55 * m)} className={`fov${sel?.id === cam.id ? " selected" : ""}`} />
+                <g transform={`translate(${cam.position.x} ${cam.position.y}) scale(${m})`}>
                   <circle r={9} className={`cam-dot${sel?.id === cam.id ? " selected" : ""}`} />
                 </g>
               </g>
             ))}
 
-            {floor.doors.map((d) => (
-              <g key={d.id} className={`door${d.placeholder ? " placeholder" : ""}`} transform={`translate(${d.position.x} ${d.position.y}) scale(${k})`} onPointerDown={grab({ kind: "door", id: d.id }, (start) => ({ type: "door", id: d.id, start, orig: d.position }))} onClick={(e) => e.stopPropagation()}>
-                <rect x={-8} y={-8} width={16} height={16} rx={3} fill={d.source ? "var(--ok)" : "var(--door-passive)"} className={`door-shape${sel?.id === d.id ? " selected" : ""}`} />
-              </g>
-            ))}
+            {floor.doors.map((d) =>
+              d.source ? (
+                <g key={d.id} className={`door${d.placeholder ? " placeholder" : ""}`} transform={`translate(${d.position.x} ${d.position.y}) scale(${m})`} onPointerDown={grab({ kind: "door", id: d.id }, (start) => ({ type: "door", id: d.id, start, orig: d.position }))} onClick={(e) => e.stopPropagation()}>
+                  <rect x={-8} y={-8} width={16} height={16} rx={3} fill="var(--ok)" className={`door-shape${sel?.id === d.id ? " selected" : ""}`} />
+                </g>
+              ) : (
+                <circle
+                  key={d.id}
+                  cx={d.position.x}
+                  cy={d.position.y}
+                  r={4.5 * m}
+                  fill={lockColor(d)}
+                  className={`door-dot${sel?.id === d.id ? " selected" : ""}`}
+                  onPointerDown={grab({ kind: "door", id: d.id }, (start) => ({ type: "door", id: d.id, start, orig: d.position }))}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ),
+            )}
 
             {floor.displays.map((d) => (
               <rect
                 key={d.id}
-                x={d.position.x - 9 * k}
-                y={d.position.y - 5 * k}
-                width={18 * k}
-                height={10 * k}
-                rx={2 * k}
+                x={d.position.x - 9 * m}
+                y={d.position.y - 5 * m}
+                width={18 * m}
+                height={10 * m}
+                rx={2 * m}
                 className={`display${sel?.id === d.id ? " selected" : ""}`}
                 onPointerDown={grab({ kind: "display", id: d.id }, (start) => ({ type: "display", id: d.id, start, orig: d.position }))}
                 onClick={(e) => e.stopPropagation()}
@@ -456,6 +477,22 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
         </div>
       </section>
 
+      {importing && (
+        <ImportPlanDialog
+          draft={draft}
+          floor={floor}
+          cameras={biCameras}
+          onClose={() => setImporting(false)}
+          onApply={(layout, report) => {
+            setHistory((h) => [...h.slice(-49), draftRef.current]);
+            setDraft(layout);
+            setImporting(false);
+            setSel(null);
+            setHint(`Imported ${report.rooms} rooms and ${report.doors} doors. Check them over, then press Save map (Undo takes it back).`);
+          }}
+        />
+      )}
+
       <aside className="side">
         {!sel && (
           <div className="panel">
@@ -468,6 +505,10 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
               <li>Delete key removes the selected item. Ctrl+Z undoes.</li>
             </ul>
             <p className="muted small">{floor.zones.length} rooms · {floor.cameras.length} cameras · {floor.doors.length} doors on this level</p>
+            <div className="lock-legend">
+              {(Object.keys(DOOR_LOCK_LABELS) as DoorLockType[]).map((t) => <span key={t}><i style={{ background: `var(--lock-${t})` }} />{DOOR_LOCK_LABELS[t]}</span>)}
+              <span><i style={{ background: "var(--door-passive)" }} />Lock not recorded</span>
+            </div>
             {floor.cameras.length > 0 && (
               <button
                 className="btn-ghost small-btn"
@@ -615,6 +656,20 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
               ))}
             </div>
             <label className="toggle"><input type="checkbox" checked={!!selDoor.exterior} onChange={(e) => commit((d) => (findDoor(d, selDoor.id)!.exterior = e.target.checked))} /> Exterior door</label>
+            <label>Lock
+              <select
+                value={selDoor.source ? "access" : selDoor.lockType ?? ""}
+                disabled={!!selDoor.source}
+                onChange={(e) => commit((d) => {
+                  const x = findDoor(d, selDoor.id)!;
+                  if (e.target.value) x.lockType = e.target.value as DoorLockType;
+                  else delete x.lockType;
+                })}
+              >
+                <option value="">Not recorded</option>
+                {(Object.keys(DOOR_LOCK_LABELS) as DoorLockType[]).map((t) => <option key={t} value={t}>{DOOR_LOCK_LABELS[t]}</option>)}
+              </select>
+            </label>
             <label className="toggle"><input type="checkbox" checked={!!selDoor.source} onChange={(e) => commit((d) => {
               const x = findDoor(d, selDoor.id)!;
               x.source = e.target.checked ? { integration: doorIntegration ?? "doors", externalId: x.id } : undefined;

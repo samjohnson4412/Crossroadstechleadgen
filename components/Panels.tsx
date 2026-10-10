@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { SecurityEvent } from "@/lib/core/events";
 import type { LiveState } from "@/lib/core/live";
-import type { PublicSite, Zone, CameraPlacement, DoorPlacement, DisplayPlacement } from "@/lib/core/site";
+import { DOOR_LOCK_LABELS, doorLockType, type PublicSite, type Zone, type CameraPlacement, type DoorPlacement, type DisplayPlacement } from "@/lib/core/site";
 import type { DoorStatus } from "@/lib/integrations/types";
 import { COLOR_NAMES } from "./CameraFeed";
 import { send } from "./useLive";
@@ -53,7 +53,15 @@ export function describeDoor(status?: DoorStatus) {
 
 export function DoorControls({ door, status, controllable = true }: { door: DoorPlacement; status?: DoorStatus; controllable?: boolean }) {
   const { busy, error, run } = useAction();
-  if (!door.source) return <p className="muted">Not connected to access control (passage only).</p>;
+  if (!door.source) {
+    const lock = doorLockType(door);
+    return (
+      <p className="muted">
+        <span className="lock-chip" style={{ background: lock ? `var(--lock-${lock})` : "var(--door-passive)" }} />
+        {lock ? DOOR_LOCK_LABELS[lock] : "Lock type not recorded"} · not connected to the console. Set the lock type in Edit map.
+      </p>
+    );
+  }
   if (!controllable)
     return (
       <p className="muted small">
