@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { TOPIC_LABELS, type Contact, type NotifyTopic } from "@/lib/core/contacts";
 import { send } from "./useLive";
 
 interface Field {
@@ -56,6 +57,10 @@ export function SettingsPage() {
         <div className="settings-grid">
           {items?.map((it) => <IntegrationCard key={it.id} item={it} onSaved={() => setTimeout(load, 1500)} />)}
         </div>
+
+        <h2>Text-message contacts</h2>
+        <p className="muted">Who gets texts, and for what. Texts go out through the Text messages (Twilio) connection above.</p>
+        <ContactsEditor />
 
         <h2>Logins &amp; access</h2>
         <p className="muted">
@@ -182,6 +187,89 @@ function TestResult({ result }: { result: Record<string, unknown> }) {
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+function ContactsEditor() {
+  const [contacts, setContacts] = useState<Contact[] | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/contacts").then((r) => r.json()).then(setContacts).catch(() => setContacts([]));
+  }, []);
+  if (!contacts) return <p className="muted">Loading…</p>;
+  const topics = Object.keys(TOPIC_LABELS) as NotifyTopic[];
+  const update = (i: number, patch: Partial<Contact>) => {
+    setContacts(contacts.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+    setDirty(true);
+  };
+  const save = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      setContacts(await send("/api/contacts", { contacts }, "PUT"));
+      setDirty(false);
+      setMsg({ ok: true, text: "Contacts saved." });
+    } catch (err) {
+      setMsg({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const test = async (c: Contact) => {
+    setMsg(null);
+    try {
+      const out = await send("/api/contacts/test", { id: c.id });
+      setMsg({ ok: true, text: out.simulated ? `Simulated text to ${c.name} (Twilio isn't set up yet).` : `Test text sent to ${c.name}.` });
+    } catch (err) {
+      setMsg({ ok: false, text: (err as Error).message });
+    }
+  };
+  return (
+    <div className="contacts">
+      <table className="table">
+        <thead>
+          <tr>
+            <th>On</th>
+            <th>Name</th>
+            <th>Mobile number</th>
+            {topics.map((t) => <th key={t} title={TOPIC_LABELS[t]} className="topic-h">{t}</th>)}
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {contacts.map((c, i) => (
+            <tr key={c.id || i}>
+              <td><input type="checkbox" checked={c.enabled} onChange={(e) => update(i, { enabled: e.target.checked })} /></td>
+              <td><input value={c.name} onChange={(e) => update(i, { name: e.target.value })} placeholder="Name" /></td>
+              <td><input value={c.phone} onChange={(e) => update(i, { phone: e.target.value })} placeholder="(555) 123-4567" /></td>
+              {topics.map((t) => (
+                <td key={t} className="topic-c">
+                  <input
+                    type="checkbox"
+                    checked={c.topics.includes(t)}
+                    onChange={(e) => update(i, { topics: e.target.checked ? [...c.topics, t] : c.topics.filter((x) => x !== t) })}
+                  />
+                </td>
+              ))}
+              <td className="nowrap">
+                {c.id && !dirty && <button className="small-btn" onClick={() => test(c)}>Test</button>}
+                <button className="btn-ghost small-btn" title="Remove" onClick={() => (setContacts(contacts.filter((_, j) => j !== i)), setDirty(true))}>✕</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <ul className="topic-legend muted small">
+        {topics.map((t) => <li key={t}><strong>{t}</strong> — {TOPIC_LABELS[t]}</li>)}
+      </ul>
+      {msg && <p className={msg.ok ? "ok-text" : "error"}>{msg.text}</p>}
+      <div className="btn-row end">
+        <button onClick={() => (setContacts([...contacts, { id: "", name: "", phone: "", topics: ["alerts", "critical"], enabled: true }]), setDirty(true))}>+ Add contact</button>
+        <button className="btn-primary" disabled={busy || !dirty} onClick={save}>Save contacts</button>
+      </div>
     </div>
   );
 }

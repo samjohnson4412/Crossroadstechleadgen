@@ -37,6 +37,11 @@ export const DRIVER_FIELDS: Record<string, Record<string, FieldInfo>> = {
     sendUrl: { label: "Send URL", placeholder: "https://…", help: "SMART Remote Management endpoint (or relay) that shows messages on boards." },
     token: { label: "API token", type: "password" },
   },
+  twilio: {
+    accountSid: { label: "Account SID", placeholder: "AC…", help: "Twilio console → Account info." },
+    authToken: { label: "Auth token", type: "password" },
+    from: { label: "From number", placeholder: "+15551234567", help: "Your Twilio phone number." },
+  },
   algo: {
     host: { label: "Device IP", placeholder: "192.168.1.60", help: "Algo paging adapter / speaker." },
     password: { label: "Admin password", type: "password" },

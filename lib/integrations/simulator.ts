@@ -348,6 +348,14 @@ export function createSimulatedIntegration(ctx: IntegrationContext, capabilities
       async stop() {},
     };
   }
+  if (capabilities.includes("sms")) {
+    integration.sms = {
+      async send(to, body) {
+        ctx.log(`[sim] SMS to ${to.join(", ")}: ${body}`);
+        return { sent: to.length, failed: [] };
+      },
+    };
+  }
   if (capabilities.includes("messaging")) {
     integration.messaging = {
       async send(message, displays, actor) {

@@ -4,7 +4,7 @@
  * Types only + presets — safe to import from the browser.
  */
 
-export type AlertChannel = "displays" | "paging" | "saferwatch" | "lockdown";
+export type AlertChannel = "displays" | "paging" | "sms" | "saferwatch" | "lockdown";
 export type AlertLevel = "info" | "warning" | "emergency";
 
 export interface AlertPreset {
@@ -26,7 +26,7 @@ export const ALERT_PRESETS: AlertPreset[] = [
     level: "emergency",
     title: "LOCKDOWN",
     message: "Lockdown. Locks, lights, out of sight. Do not open doors until released by staff or police.",
-    channels: ["displays", "paging", "saferwatch", "lockdown"],
+    channels: ["displays", "paging", "sms", "saferwatch", "lockdown"],
     color: "#a855f7",
     icon: "🔒",
   },
@@ -46,7 +46,7 @@ export const ALERT_PRESETS: AlertPreset[] = [
     level: "emergency",
     title: "EVACUATE",
     message: "Evacuate the building now using the nearest safe exit. Go to your assembly area.",
-    channels: ["displays", "paging", "saferwatch"],
+    channels: ["displays", "paging", "sms", "saferwatch"],
     color: "#e5484d",
     icon: "🏃",
   },
@@ -56,7 +56,7 @@ export const ALERT_PRESETS: AlertPreset[] = [
     level: "emergency",
     title: "SHELTER IN PLACE",
     message: "Shelter in place. Move to an interior room away from windows and await instructions.",
-    channels: ["displays", "paging", "saferwatch"],
+    channels: ["displays", "paging", "sms", "saferwatch"],
     color: "#0ea5e9",
     icon: "🏠",
   },
@@ -66,7 +66,7 @@ export const ALERT_PRESETS: AlertPreset[] = [
     level: "warning",
     title: "MEDICAL EMERGENCY",
     message: "Medical emergency in progress. Keep hallways clear for responders.",
-    channels: ["displays", "saferwatch"],
+    channels: ["displays", "sms", "saferwatch"],
     color: "#22c55e",
     icon: "✚",
   },
@@ -95,6 +95,7 @@ export const ALERT_PRESETS: AlertPreset[] = [
 export const CHANNEL_LABELS: Record<AlertChannel, string> = {
   displays: "SMART Boards",
   paging: "Speakers / horns / phone paging",
+  sms: "Text message to staff",
   saferwatch: "SaferWatch app",
   lockdown: "Lock all controlled doors",
 };

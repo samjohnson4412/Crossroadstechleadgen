@@ -46,6 +46,12 @@ export const demoSite: SiteConfig = {
       settings: { host: { env: "ALGO_HOST" }, password: { env: "ALGO_PASSWORD" } },
     },
     {
+      id: "sms",
+      driver: "twilio",
+      name: "Text messages (Twilio)",
+      settings: { accountSid: { env: "TWILIO_ACCOUNT_SID" }, authToken: { env: "TWILIO_AUTH_TOKEN" }, from: { env: "TWILIO_FROM" } },
+    },
+    {
       id: "displays",
       driver: "smart-displays",
       name: "SMART Boards",

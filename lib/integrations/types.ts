@@ -10,7 +10,7 @@ import type { IntegrationConfig } from "../core/site.ts";
  * Adding a vendor = writing one driver file and registering it in registry.ts.
  */
 
-export type Capability = "cameras" | "access-control" | "alerts" | "messaging" | "paging" | "access-events";
+export type Capability = "cameras" | "access-control" | "alerts" | "messaging" | "paging" | "access-events" | "sms";
 
 export type HealthState = "ok" | "connecting" | "degraded" | "offline" | "simulated" | "unconfigured";
 
@@ -112,6 +112,13 @@ export interface PagingCapability {
   stop?(actor: Actor): Promise<void>;
 }
 
+// ---------- SMS ----------
+
+export interface SmsCapability {
+  /** Send one text to each number (E.164, e.g. +15551234567). Throws only if none could be sent. */
+  send(to: string[], body: string): Promise<{ sent: number; failed: string[] }>;
+}
+
 // ---------- the integration itself ----------
 
 export interface IntegrationContext {
@@ -134,6 +141,7 @@ export interface Integration {
   alerts?: AlertCapability;
   messaging?: MessagingCapability;
   paging?: PagingCapability;
+  sms?: SmsCapability;
   /** Step-by-step connection test for troubleshooting (GET /api/integrations/:id/check). */
   diagnose?(): Promise<Record<string, unknown>>;
   /** Inbound webhooks from the vendor land here (POST /api/integrations/:id/webhook). */

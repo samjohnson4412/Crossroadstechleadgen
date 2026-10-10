@@ -6,6 +6,7 @@ import { createSimulatedIntegration, simWorldFor } from "../integrations/simulat
 import type { Actor, DisplayMessage, DoorStatus, Integration, IntegrationDriver, IntegrationHealth, StreamInfo } from "../integrations/types.ts";
 import { Tracker } from "../tracking/tracker.ts";
 import type { Alert, AlertChannel, AlertDelivery, AlertSpec } from "./alerts.ts";
+import { normalizePhone, type Contact, type NotifyTopic } from "./contacts.ts";
 import { DEFAULT_RULES, evaluateRules, topSeverity, type Detection, type DetectionRule } from "./detections.ts";
 import { appendLine, dataDir, pruneFolder, readJson, readJsonLines, siteFile, writeJsonSoon } from "./files.ts";
 import { newId, type RawEvent, type SecurityEvent } from "./events.ts";
@@ -62,6 +63,8 @@ export class Runtime {
   readonly alerts: Alert[] = [];
   readonly detections: Detection[] = readJson<Detection[]>(siteFile("detections"), []);
   rules: DetectionRule[] = readJson<DetectionRule[]>(siteFile("rules"), DEFAULT_RULES);
+  contacts: Contact[] = readJson<Contact[]>(siteFile("contacts"), []);
+  private recentTexts = new Map<string, number>();
   /** Badge swipes (granted and denied) — kept on disk so "where has this person been" survives restarts. */
   readonly badges: BadgeEvent[] = readJsonLines<BadgeEvent>(siteFile("badges", "jsonl"), MAX_BADGES);
   lockdown = false;
@@ -124,7 +127,13 @@ export class Runtime {
         emit: (raw: RawEvent) => this.ingest(config.id, raw),
         doorChanged: (externalId: string, status: DoorStatus) => this.doorChanged(config.id, externalId, status),
         setHealth: (state: IntegrationHealth["state"], detail?: string) => {
+          const was = running.health?.state;
           running.health = { state, detail, checkedAt: new Date().toISOString() };
+          if (state === "offline" && was && was !== "offline" && !running.simulated) {
+            this.notify("system", `${config.name} went OFFLINE${detail ? `: ${detail}` : ""}`, `offline:${config.id}`);
+          } else if (state === "ok" && was === "offline" && !running.simulated) {
+            this.notify("system", `${config.name} is back online`, `online:${config.id}`);
+          }
           this.broadcast({ type: "integration", integration: this.integrationView(running) });
         },
         log: (message: string) => console.log(`[${config.id}] ${message}`),
@@ -265,6 +274,53 @@ export class Runtime {
     if (raw.person && (event.type === "access.granted" || event.type === "access.denied")) this.recordBadge(event, raw);
   }
 
+  // ---------- text messages ----------
+
+  /**
+   * Text everyone subscribed to `topic`. `dedupeKey` stops the same thing being texted
+   * more than once in 2 minutes (e.g. a door that keeps reporting forced).
+   */
+  async notify(topic: NotifyTopic, text: string, dedupeKey = text): Promise<{ sent: number; failed: string[]; simulated: boolean; system?: string }> {
+    const key = `${topic}:${dedupeKey}`;
+    const last = this.recentTexts.get(key);
+    if (last && Date.now() - last < 120_000) return { sent: 0, failed: [], simulated: false };
+    this.recentTexts.set(key, Date.now());
+    const to = this.contacts.filter((c) => c.enabled && c.topics.includes(topic)).map((c) => c.phone);
+    const r = [...this.integrations.values()].find((x) => x.instance.sms && x.health.state !== "unconfigured");
+    if (!r || !to.length) return { sent: 0, failed: [], simulated: false, system: r?.config.name };
+    const body = `[${this.site.name}] ${text}`;
+    try {
+      const out = await r.instance.sms!.send(to, body);
+      return { ...out, simulated: r.simulated, system: r.config.name };
+    } catch (err) {
+      console.error("SMS failed", err);
+      return { sent: 0, failed: [(err as Error).message], simulated: r.simulated, system: r.config.name };
+    }
+  }
+
+  async saveContacts(contacts: Contact[], actor: Actor) {
+    const clean = contacts.map((c) => {
+      const phone = normalizePhone(c.phone);
+      if (!c.name?.trim()) throw new Error("Every contact needs a name");
+      if (!phone) throw new Error(`"${c.phone}" doesn't look like a phone number`);
+      return { id: c.id || newId("con"), name: c.name.trim(), phone, topics: c.topics, enabled: c.enabled !== false };
+    });
+    await this.audited(actor, "contacts.save", `${clean.length} contact(s)`, async () => {
+      this.contacts = clean;
+      writeJsonSoon(siteFile("contacts"), () => this.contacts);
+    });
+    return this.contacts;
+  }
+
+  async testText(contactId: string, actor: Actor) {
+    const c = this.contacts.find((x) => x.id === contactId);
+    if (!c) throw new Error("Save the contact first");
+    const r = [...this.integrations.values()].find((x) => x.instance.sms && x.health.state !== "unconfigured");
+    if (!r) throw new Error("No text-message system set up (Settings → Text messages)");
+    const out = await r.instance.sms!.send([c.phone], `[${this.site.name}] Test message from the security console, sent by ${actor.name}.`);
+    return { ...out, simulated: r.simulated };
+  }
+
   // ---------- detections ----------
 
   private recordDetection(integrationId: string, externalCameraId: string, event: SecurityEvent) {
@@ -289,6 +345,9 @@ export class Runtime {
     if (this.detections.length > MAX_DETECTIONS) this.detections.splice(0, this.detections.length - MAX_DETECTIONS);
     this.saveDetections();
     this.broadcast({ type: "detection", detection: det });
+    if (det.severity === "critical") {
+      this.notify("critical", `${det.ruleHits.map((h) => h.name).join(", ")} — ${det.summary}. Open the console to review.`, det.id);
+    }
     if (det.ruleHits.length) {
       this.pushEvent({
         id: newId("evt"),
@@ -440,6 +499,9 @@ export class Runtime {
 
   private pushEvent(event: SecurityEvent) {
     this.doorStatusFromEvent(event);
+    if ((event.type === "door.forced" || event.type === "door.held") && event.doorId) {
+      this.notify("doors", event.summary, `${event.type}:${event.doorId}`);
+    }
     this.events.push(event);
     if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
     this.broadcast({ type: "event", event });
@@ -683,6 +745,17 @@ export class Runtime {
         const systems = live.filter((r) => r.instance.paging);
         if (!systems.length) skipped(channel, "Paging", "No speaker / paging system connected");
         for (const r of systems) attempt(channel, r, () => r.instance.paging!.announce({ title, message, level, presetId: allClear ? "all-clear" : alert.presetId, zoneIds: alert.zoneIds }, actor));
+      } else if (channel === "sms") {
+        const subscribers = this.contacts.filter((c) => c.enabled && c.topics.includes("alerts")).length;
+        const r = live.find((x) => x.instance.sms);
+        if (!r) skipped(channel, "Text messages", "Text messages not set up (Settings → Text messages)");
+        else if (!subscribers) skipped(channel, r.config.name, "No contacts get Alert Center texts (Settings → Text-message contacts)");
+        else
+          attempt(channel, r, async () => {
+            const out = await this.notify("alerts", `${title}: ${message} (${alert.scopeLabel})`, `${alert.id}:${allClear ? "clear" : "send"}`);
+            if (!out.sent && out.failed.length) throw new Error(out.failed.join("; "));
+            return `${out.sent} text(s)${out.failed.length ? `, ${out.failed.length} failed` : ""}`;
+          });
       } else if (channel === "saferwatch") {
         const systems = live.filter((r) => r.instance.alerts);
         if (!systems.length) skipped(channel, "SaferWatch", "SaferWatch not connected");

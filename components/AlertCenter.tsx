@@ -11,6 +11,7 @@ import { useZoomPan, ZoomButtons } from "./useZoomPan";
 const CHANNEL_CAPABILITY: Record<AlertChannel, string> = {
   displays: "messaging",
   paging: "paging",
+  sms: "sms",
   saferwatch: "alerts",
   lockdown: "access-control",
 };

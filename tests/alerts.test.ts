@@ -38,3 +38,26 @@ test("an alert reaches every chosen channel, targeted by room, and clears", asyn
     await rt.stop();
   }
 });
+
+test("SMS: alert texts go to subscribed contacts; repeats are suppressed", async () => {
+  process.env.SENTINEL_SIMULATE = "1";
+  process.env.SENTINEL_SITE = "demo-test";
+  const rt = new Runtime(demoSite);
+  await rt.start();
+  try {
+    rt.contacts = [
+      { id: "a", name: "Sam", phone: "+15551230001", topics: ["alerts", "critical"], enabled: true },
+      { id: "b", name: "Off", phone: "+15551230002", topics: ["alerts"], enabled: false },
+      { id: "c", name: "Doors only", phone: "+15551230003", topics: ["doors"], enabled: true },
+    ];
+    const alert = await rt.sendAlert({ presetId: "evacuate", level: "emergency", title: "EVACUATE", message: "Go", zoneIds: null, scopeLabel: "Entire campus", channels: ["sms"] }, { name: "t" });
+    assert.equal(alert.deliveries[0].status, "simulated");
+    assert.equal(alert.deliveries[0].detail, "1 text(s)");
+    const again = await rt.notify("doors", "Door forced", "same");
+    assert.equal(again.sent, 1);
+    const dup = await rt.notify("doors", "Door forced", "same");
+    assert.equal(dup.sent, 0, "same thing within 2 minutes isn't texted twice");
+  } finally {
+    await rt.stop();
+  }
+});
