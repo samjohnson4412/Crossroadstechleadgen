@@ -28,6 +28,8 @@ export interface PlanDoor {
 export interface PlanRooms {
   rooms: PlanRoom[];
   doors: PlanDoor[];
+  /** Rooms split by a divider (not a wall): people walk straight between them. */
+  openings: [number, number][];
   /** The building's outline (the outside of the walls). */
   footprint: Point[];
   warnings: string[];
@@ -245,5 +247,21 @@ export function findRooms(plan: ParsedPlan, opts: { tolerance?: number; minArea?
   if (lost) warnings.push(`${lost} door line${lost > 1 ? "s" : ""} not on a wall between two rooms (ignored).`);
   const unlabeled = rooms.filter((r) => !r.lines.length).length;
   if (unlabeled) warnings.push(`${unlabeled} room${unlabeled > 1 ? "s have" : " has"} no label.`);
-  return { rooms, doors, footprint, warnings };
+  // 8. Dividers split open areas: the rooms on either side connect without a door.
+  const openings: [number, number][] = [];
+  for (const dv of plan.dividers) {
+    const dir = sub(dv.b, dv.a);
+    const l = len(dir);
+    if (l < tol) continue;
+    const normal = { x: -dir.y / l, y: dir.x / l };
+    for (const t of [0.15, 0.5, 0.85]) {
+      const at = { x: dv.a.x + dir.x * t, y: dv.a.y + dir.y * t };
+      const s1 = roomAt({ x: at.x + normal.x * tol * 2, y: at.y + normal.y * tol * 2 });
+      const s2 = roomAt({ x: at.x - normal.x * tol * 2, y: at.y - normal.y * tol * 2 });
+      if (s1 < 0 || s2 < 0 || s1 === s2) continue;
+      const pair: [number, number] = s1 < s2 ? [s1, s2] : [s2, s1];
+      if (!openings.some((o) => o[0] === pair[0] && o[1] === pair[1])) openings.push(pair);
+    }
+  }
+  return { rooms, doors, openings, footprint, warnings };
 }

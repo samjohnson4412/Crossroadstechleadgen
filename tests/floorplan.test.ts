@@ -144,3 +144,15 @@ test("deleting a building takes its rooms and doors off; cameras unmapped, badge
   assert.deepEqual(layout.parked?.doors.map((d) => [d.id, d.between, d.source?.externalId]), [["badge", ["yard", ""], "Front"]]);
   assert.deepEqual(layout.parked?.displays.map((d) => d.id), ["sb"]);
 });
+
+test("rooms split by a divider connect without a door", () => {
+  const plan = readPlan(SVG);
+  const idx = (n: string) => plan.rooms.find((r) => r.lines[0] === n)!.index;
+  const pair = [idx("R3"), idx("R4")].sort((a, b) => a - b);
+  assert.deepEqual(plan.openings, [pair]);
+  const floor: Floor = { id: "l1", name: "L1", width: 1000, height: 1000, zones: [], cameras: [], doors: [], displays: [] };
+  const { layout } = applyPlan({ layout: { buildings: [{ id: "b", name: "B", floors: [floor] }], passages: [] }, floorId: "l1", plan, placement: { x: 500, y: 500, turns: 0, scaleX: 1, scaleY: 1 }, building: "T" });
+  const zones = layout.buildings[0].floors[0].zones;
+  const id = (n: string) => zones.find((z) => z.name === n)!.id;
+  assert.deepEqual(layout.passages.map((p) => [...p.between].sort()), [[id("R3"), id("R4")].sort()]);
+});

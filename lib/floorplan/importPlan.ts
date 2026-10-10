@@ -212,6 +212,12 @@ export function applyPlan(opts: {
     report.doors++;
   }
 
+  // Rooms split by a divider are open to each other.
+  for (const [a, b] of plan.openings) {
+    const za = roomZone.get(a)!, zb = roomZone.get(b)!;
+    if (!layout.passages.some((p) => p.between.includes(za.id) && p.between.includes(zb.id))) layout.passages.push({ between: [za.id, zb.id] });
+  }
+
   // ---------- the drawing ----------
   const keep = (floor.drawings ?? []).filter((dr) => !sameName(dr.building, building) && !sameName(dr.building, opts.replace));
   floor.drawings = [
