@@ -32,6 +32,8 @@ function apply(state: LiveState, msg: LiveMessage): LiveState {
       const others = state.watchHits.filter((h) => h.id !== msg.hit.id);
       return { ...state, watchHits: [...others, msg.hit].sort((a, b) => a.at.localeCompare(b.at)).slice(-20) };
     }
+    case "incident":
+      return { ...state, incident: msg.incident.status === "open" ? msg.incident : state.incident?.id === msg.incident.id ? null : state.incident };
     case "sim":
       return { ...state, sim: msg.actors };
     case "site":

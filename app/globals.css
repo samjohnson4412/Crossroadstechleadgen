@@ -362,3 +362,36 @@ button.on-muted { color: var(--muted); }
 .watch-banner { background: #b91c1c; }
 .watch-chip { font-size: 10px; font-weight: 800; letter-spacing: 0.05em; background: #b91c1c; color: white; padding: 1px 6px; border-radius: 6px; margin-left: 6px; }
 .watch-note { display: flex; align-items: center; gap: 6px; }
+
+/* ---------- incidents ---------- */
+.incident-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 14px; background: #1f1430; border-bottom: 1px solid #4c1d95; }
+.ib-title { font-weight: 800; color: #d8b4fe; letter-spacing: 0.03em; }
+.ib-note { width: 240px; padding: 4px 8px; }
+.drill-chip { font-size: 10px; font-weight: 800; background: #0e7490; color: white; padding: 1px 6px; border-radius: 6px; margin-left: 8px; vertical-align: middle; }
+.report { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; background: #fff; color: #111; min-height: 100vh; }
+.report h1 { margin: 0 0 4px; }
+.report h2 { border-bottom: 2px solid #111; padding-bottom: 4px; margin-top: 26px; font-size: 18px; }
+.report .muted { color: #555; }
+.report-meta { color: #333; }
+.report-summary { white-space: pre-wrap; font-size: 15px; }
+.report-block { margin: 10px 0; }
+.report-list { margin: 4px 0; padding-left: 20px; font-size: 13px; }
+.report-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.report-table td { border-bottom: 1px solid #ddd; padding: 4px 6px; vertical-align: top; }
+.ri-kind { text-transform: uppercase; font-size: 10px; color: #555; width: 80px; }
+.ri-critical td { color: #b91c1c; font-weight: 600; }
+.ri-note td { background: #f5f3ff; }
+.report-dets { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.report-dets figure { margin: 0; font-size: 12px; }
+.report-dets img, .report-noimg { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #eee; display: grid; place-items: center; }
+.report-actions { display: flex; justify-content: space-between; margin-bottom: 16px; }
+.report-actions .button-link { color: #111; background: #f3f4f6; border-color: #ccc; }
+.report-foot { margin-top: 30px; font-size: 11px; }
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+  .report { padding: 0; }
+}
+.drill-toggle { flex-direction: row; align-items: center; gap: 10px; border: 1px dashed #0e7490; border-radius: 8px; padding: 8px 12px; margin: 4px 0 0; color: var(--text); font-size: 13px; cursor: pointer; }
+.drill-toggle input { width: auto; }
+.drill-toggle.on { background: rgba(14, 116, 144, 0.2); border-style: solid; }

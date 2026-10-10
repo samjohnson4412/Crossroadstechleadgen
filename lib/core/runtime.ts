@@ -7,6 +7,7 @@ import type { Actor, DisplayMessage, DoorStatus, Integration, IntegrationDriver,
 import { Tracker } from "../tracking/tracker.ts";
 import type { Alert, AlertChannel, AlertDelivery, AlertSpec } from "./alerts.ts";
 import type { WatchEntry, WatchHit } from "./watchlist.ts";
+import { isRoutine, type Incident, type IncidentItem } from "./incidents.ts";
 import { normalizePhone, type Contact, type NotifyTopic } from "./contacts.ts";
 import { DEFAULT_RULES, evaluateRules, topSeverity, type Detection, type DetectionRule } from "./detections.ts";
 import { appendLine, dataDir, pruneFolder, readJson, readJsonLines, siteFile, writeJsonSoon } from "./files.ts";
@@ -67,6 +68,7 @@ export class Runtime {
   contacts: Contact[] = readJson<Contact[]>(siteFile("contacts"), []);
   watchlist: WatchEntry[] = readJson<WatchEntry[]>(siteFile("watchlist"), []);
   readonly watchHits: WatchHit[] = [];
+  readonly incidents: Incident[] = readJson<Incident[]>(siteFile("incidents"), []);
   private recentTexts = new Map<string, number>();
   /** Badge swipes (granted and denied) — kept on disk so "where has this person been" survives restarts. */
   readonly badges: BadgeEvent[] = readJsonLines<BadgeEvent>(siteFile("badges", "jsonl"), MAX_BADGES);
@@ -175,6 +177,7 @@ export class Runtime {
     this.lockdown = old.lockdown;
     this.alerts.push(...old.alerts);
     this.watchHits.push(...old.watchHits);
+    this.incidents.splice(0, this.incidents.length, ...old.incidents);
     this.detections.splice(0, this.detections.length, ...old.detections);
     this.badges.splice(0, this.badges.length, ...old.badges);
     this.rules = old.rules;
@@ -245,6 +248,7 @@ export class Runtime {
       alerts: this.alerts.slice(-20),
       detections: this.detections.slice(-100),
       watchHits: this.watchHits.slice(-20),
+      incident: this.openIncident() ?? null,
       sim: this.simulating ? simWorldFor(this.graph).view() : null,
       authConfigured,
     };
@@ -350,6 +354,9 @@ export class Runtime {
     if (this.detections.length > MAX_DETECTIONS) this.detections.splice(0, this.detections.length - MAX_DETECTIONS);
     this.saveDetections();
     this.broadcast({ type: "detection", detection: det });
+    if (det.ruleHits.length) {
+      this.addToIncident({ at: det.at, kind: "detection", text: `${det.ruleHits.map((h) => h.name).join(", ")} — ${det.summary}`, severity: det.severity, cameraId: det.cameraId, detectionId: det.id });
+    }
     if (det.severity === "critical") {
       this.notify("critical", `${det.ruleHits.map((h) => h.name).join(", ")} — ${det.summary}. Open the console to review.`, det.id);
     }
@@ -447,6 +454,95 @@ export class Runtime {
     this.checkWatchlist(b);
     if (this.badges.length > MAX_BADGES) this.badges.splice(0, this.badges.length - MAX_BADGES);
     appendLine(siteFile("badges", "jsonl"), b).catch(() => {});
+  }
+
+  /** Drill log: each drill with when it started, when all clear was sent, and by whom. */
+  drillLog() {
+    const rows = new Map<string, { id: string; at: string; presetId: string; title: string; scope: string; by: string; channels: string[]; clearedAt?: string; clearedBy?: string }>();
+    for (const line of readJsonLines<Record<string, unknown>>(siteFile("drills", "jsonl"), 5000)) {
+      const id = String(line.id);
+      if (line.at) rows.set(id, { ...(rows.get(id) ?? {}), ...(line as object) } as never);
+      else if (rows.has(id)) Object.assign(rows.get(id)!, { clearedAt: line.clearedAt, clearedBy: line.clearedBy });
+    }
+    return [...rows.values()].sort((a, b) => b.at.localeCompare(a.at));
+  }
+
+  // ---------- incidents ----------
+
+  openIncident(): Incident | undefined {
+    return this.incidents.find((i) => i.status === "open");
+  }
+
+  private saveIncidents() {
+    writeJsonSoon(siteFile("incidents"), () => this.incidents.slice(-200));
+  }
+
+  private addToIncident(item: IncidentItem) {
+    const inc = this.openIncident();
+    if (!inc) return;
+    inc.timeline.push(item);
+    this.saveIncidents();
+    this.broadcast({ type: "incident", incident: inc });
+  }
+
+  openIncidentNow(title: string, actor: Actor, drill = false) {
+    if (this.openIncident()) throw new Error("An incident is already open — close it first");
+    const at = new Date().toISOString();
+    const inc: Incident = { id: newId("inc"), title: title.trim() || "Incident", status: "open", openedAt: at, openedBy: actor.name, drill, timeline: [], trackIds: [], alertIds: [] };
+    // Include the 10 minutes before it was opened: what led up to it.
+    const since = Date.now() - 10 * 60_000;
+    for (const e of this.events) {
+      if (Date.parse(e.at) >= since && !isRoutine(e.type)) inc.timeline.push({ at: e.at, kind: "event", text: e.summary, severity: e.severity, cameraId: e.cameraId, doorId: e.doorId, zoneId: e.zoneId });
+    }
+    for (const t of this.tracker.tracks.values()) if (t.status === "active") inc.trackIds.push(t.id);
+    inc.timeline.push({ at, kind: "note", text: `Incident opened: ${inc.title}`, by: actor.name });
+    this.incidents.push(inc);
+    this.saveIncidents();
+    this.broadcast({ type: "incident", incident: inc });
+    return inc;
+  }
+
+  addIncidentNote(id: string, text: string, actor: Actor) {
+    const inc = this.incidents.find((i) => i.id === id);
+    if (!inc) throw new Error("Incident not found");
+    if (!text.trim()) throw new Error("Note is empty");
+    inc.timeline.push({ at: new Date().toISOString(), kind: "note", text: text.trim(), by: actor.name });
+    this.saveIncidents();
+    this.broadcast({ type: "incident", incident: inc });
+    return inc;
+  }
+
+  closeIncident(id: string, summary: string, actor: Actor) {
+    const inc = this.incidents.find((i) => i.id === id);
+    if (!inc) throw new Error("Incident not found");
+    inc.status = "closed";
+    inc.closedAt = new Date().toISOString();
+    inc.closedBy = actor.name;
+    inc.summary = summary.trim() || undefined;
+    inc.timeline.push({ at: inc.closedAt, kind: "note", text: "Incident closed", by: actor.name });
+    this.saveIncidents();
+    this.broadcast({ type: "incident", incident: inc });
+    return inc;
+  }
+
+  /** Everything the report needs: the incident plus copies of its alerts, tracks and detections. */
+  incidentReport(id: string) {
+    const inc = this.incidents.find((i) => i.id === id);
+    if (!inc) throw new Error("Incident not found");
+    const from = Date.parse(inc.openedAt) - 10 * 60_000;
+    const to = inc.closedAt ? Date.parse(inc.closedAt) : Date.now();
+    return {
+      incident: inc,
+      siteName: this.site.name,
+      alerts: this.alerts.filter((a) => inc.alertIds.includes(a.id)),
+      tracks: [...this.tracker.tracks.values()].filter((t) => inc.trackIds.includes(t.id)),
+      detections: this.detections.filter((d) => d.ruleHits.length && Date.parse(d.at) >= from && Date.parse(d.at) <= to),
+      names: {
+        zones: Object.fromEntries([...this.graph.zones.values()].map((z) => [z.id, z.name])),
+        cameras: Object.fromEntries([...this.graph.cameras.values()].map((c) => [c.id, c.name])),
+        doors: Object.fromEntries([...this.graph.doors.values()].map((d) => [d.id, d.name])),
+      },
+    };
   }
 
   // ---------- watch list ----------
@@ -560,6 +656,9 @@ export class Runtime {
 
   private pushEvent(event: SecurityEvent) {
     this.doorStatusFromEvent(event);
+    if (!isRoutine(event.type)) {
+      this.addToIncident({ at: event.at, kind: "event", text: event.summary, severity: event.severity, cameraId: event.cameraId, doorId: event.doorId, zoneId: event.zoneId });
+    }
     if ((event.type === "door.forced" || event.type === "door.held") && event.doorId) {
       this.notify("doors", event.summary, `${event.type}:${event.doorId}`);
     }
@@ -587,6 +686,9 @@ export class Runtime {
       entry.error = (err as Error).message;
       throw err;
     } finally {
+      if (!entry.action.startsWith("settings") && !entry.action.startsWith("rename") && !entry.action.startsWith("layout")) {
+        this.addToIncident({ at: entry.at, kind: "action", text: `${entry.action} ${entry.target ?? ""}${entry.ok ? "" : ` — FAILED: ${entry.error}`}`.trim(), by: entry.actor });
+      }
       this.audit.push(entry);
       if (this.audit.length > MAX_AUDIT) this.audit.splice(0, this.audit.length - MAX_AUDIT);
       this.broadcast({ type: "audit", entry });
@@ -726,9 +828,15 @@ export class Runtime {
     if (!spec.title?.trim()) throw new Error("The alert needs a title");
     if (!spec.channels?.length) throw new Error("Pick at least one way to send the alert");
     if (spec.zoneIds) for (const z of spec.zoneIds) if (!this.graph.zones.has(z)) throw new Error(`Unknown area ${z}`);
-    const alert: Alert = { ...spec, title: spec.title.trim(), id: newId("alr"), at: new Date().toISOString(), by: actor.name, status: "active", deliveries: [] };
+    const title = spec.drill && !/^drill\b/i.test(spec.title.trim()) ? `DRILL: ${spec.title.trim()}` : spec.title.trim();
+    const message = spec.drill && !/this is a drill/i.test(spec.message) ? `${spec.message} This is a drill.`.trim() : spec.message;
+    const alert: Alert = { ...spec, title, message, id: newId("alr"), at: new Date().toISOString(), by: actor.name, status: "active", deliveries: [] };
+    if (spec.drill) appendLine(siteFile("drills", "jsonl"), { id: alert.id, at: alert.at, presetId: spec.presetId, title, scope: spec.scopeLabel, by: actor.name, channels: spec.channels }).catch(() => {});
     this.alerts.push(alert);
     if (this.alerts.length > 50) this.alerts.splice(0, this.alerts.length - 50);
+    if (spec.level === "emergency" && !this.openIncident()) this.openIncidentNow(alert.title, actor, !!spec.drill);
+    const inc = this.openIncident();
+    if (inc) inc.alertIds.push(alert.id);
     this.broadcast({ type: "alert", alert });
     await this.audited(actor, `alert.${spec.presetId}`, `${alert.title} → ${spec.scopeLabel}`, async () => {
       alert.deliveries = await this.deliver(alert, actor, false);
@@ -757,6 +865,7 @@ export class Runtime {
     alert.status = "cleared";
     alert.clearedAt = new Date().toISOString();
     alert.clearedBy = actor.name;
+    if (alert.drill) appendLine(siteFile("drills", "jsonl"), { id: alert.id, clearedAt: alert.clearedAt, clearedBy: actor.name }).catch(() => {});
     this.pushEvent({
       id: newId("evt"),
       type: "alert.cleared",
@@ -878,6 +987,11 @@ export class Runtime {
 
   /** Called after any tracker mutation from the API. */
   trackChanged(trackId: string) {
+    const inc = this.openIncident();
+    if (inc && !inc.trackIds.includes(trackId)) {
+      inc.trackIds.push(trackId);
+      this.saveIncidents();
+    }
     this.broadcast({ type: "track", track: this.tracker.get(trackId) });
   }
 

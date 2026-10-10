@@ -13,6 +13,7 @@ import { PeoplePanel } from "./People";
 import { ago, FollowView, trackColor, useNow } from "./TrackView";
 import { send, useLive } from "./useLive";
 import { WatchHits } from "./WatchList";
+import { OpenIncidentBar } from "./Incidents";
 
 type Tab = "home" | "cameras" | "track" | "activity";
 type Sheet = { kind: "alert"; presetId?: string } | { kind: "lockdown" } | { kind: "detections" } | { kind: "people" } | { kind: "allcams" } | { kind: "tag"; cameraId?: string } | null;
@@ -55,6 +56,7 @@ function MobileLoaded({ site, state, connected }: { site: PublicSite; state: Liv
         <button className="btn-ghost small-btn" onClick={desktop}>Full console</button>
       </header>
       {state.lockdown && <div className="banner danger">LOCKDOWN ACTIVE</div>}
+      <OpenIncidentBar state={state} />
       <ActiveAlerts state={state} />
       <WatchHits state={state} idx={idx} onShowDoor={() => setTab("cameras")} onFollow={(id) => (setTrackId(id), setTab("track"))} />
       <CriticalDetections state={state} idx={idx} onReview={() => setSheet({ kind: "detections" })} onLockdown={() => setSheet({ kind: "alert", presetId: "lockdown" })} />

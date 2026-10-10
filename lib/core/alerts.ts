@@ -110,6 +110,8 @@ export interface AlertSpec {
   /** Human description of where, e.g. "Education, Level 2" — shown to people and logged. */
   scopeLabel: string;
   channels: AlertChannel[];
+  /** A drill: marked DRILL on every channel and logged as a drill. */
+  drill?: boolean;
 }
 
 export interface AlertDelivery {

@@ -5,6 +5,7 @@
 import type { Alert } from "./alerts.ts";
 import type { Detection } from "./detections.ts";
 import type { WatchHit } from "./watchlist.ts";
+import type { Incident } from "./incidents.ts";
 import type { SecurityEvent } from "./events.ts";
 import type { DoorStatus, IntegrationHealth, StreamInfo } from "../integrations/types.ts";
 import type { SimActorView } from "../integrations/simulator.ts";
@@ -41,6 +42,8 @@ export interface LiveState {
   alerts: Alert[];
   detections: Detection[];
   watchHits: WatchHit[];
+  /** The open incident, if any. */
+  incident: Incident | null;
   sim: SimActorView[] | null;
   authConfigured: boolean;
 }
@@ -55,6 +58,7 @@ export type LiveMessage =
   | { type: "alert"; alert: Alert }
   | { type: "detection"; detection: Detection }
   | { type: "watchhit"; hit: WatchHit }
+  | { type: "incident"; incident: Incident }
   | { type: "sim"; actors: SimActorView[] }
   /** Site layout or names changed; reload /api/site. */
   | { type: "site" };

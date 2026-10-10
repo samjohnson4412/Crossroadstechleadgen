@@ -61,3 +61,35 @@ test("SMS: alert texts go to subscribed contacts; repeats are suppressed", async
     await rt.stop();
   }
 });
+
+test("drill: marked DRILL, opens a drill incident, logged with its all clear; incident records and closes", async () => {
+  process.env.SENTINEL_SIMULATE = "1";
+  process.env.SENTINEL_SITE = "demo-test-drill";
+  const { rmSync } = await import("node:fs");
+  rmSync("data/drills.demo-test-drill.jsonl", { force: true });
+  rmSync("data/incidents.demo-test-drill.json", { force: true });
+  const rt = new Runtime(demoSite);
+  await rt.start();
+  try {
+    const a = await rt.sendAlert({ presetId: "lockdown", level: "emergency", title: "LOCKDOWN", message: "Locks, lights.", zoneIds: null, scopeLabel: "Entire campus", channels: ["displays"], drill: true }, actor);
+    assert.equal(a.title, "DRILL: LOCKDOWN");
+    assert.match(a.message, /This is a drill\./);
+    const inc = rt.openIncident()!;
+    assert.ok(inc && inc.drill, "emergency alert opened a drill incident");
+    assert.ok(inc.alertIds.includes(a.id));
+    rt.addIncidentNote(inc.id, "Room 101 reported clear", actor);
+    await rt.clearAlert(a.id, actor);
+    assert.ok(inc.timeline.some((i) => i.kind === "note" && i.text.includes("Room 101")));
+    assert.ok(inc.timeline.some((i) => i.kind === "action" && i.text.includes("alert.lockdown")));
+    rt.closeIncident(inc.id, "Drill went well", actor);
+    assert.equal(rt.openIncident(), undefined);
+    assert.equal(rt.incidentReport(inc.id).alerts.length, 1);
+    await new Promise((r) => setTimeout(r, 50));
+    const log = rt.drillLog();
+    assert.equal(log.length, 1);
+    assert.ok(log[0].clearedAt, "all clear recorded");
+    assert.throws(() => rt.openIncidentNow("x", actor) && rt.openIncidentNow("y", actor), /already open/);
+  } finally {
+    await rt.stop();
+  }
+});

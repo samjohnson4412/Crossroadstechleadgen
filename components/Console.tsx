@@ -12,12 +12,13 @@ import { CriticalDetections, DetectionsPanel, needsReview } from "./Detections";
 import { MapEditor } from "./MapEditor";
 import { PeoplePanel, type BadgePath } from "./People";
 import { WatchHits } from "./WatchList";
+import { OpenIncidentBar, StartIncidentDialog } from "./Incidents";
 import { MapView, type Selection, type TrackOverlay } from "./MapView";
 import { AllCamerasDialog, describeDoor, DoorControls, EditableName, EventFeed, indexSite, IntegrationsDialog, LockdownDialog, TagDialog, useAction, type SiteIndex } from "./Panels";
 import { ago, buildOverlay, FollowView, trackColor, TrackSide, useNow } from "./TrackView";
 import { send, useLive } from "./useLive";
 
-type ModalKind = { kind: "cameras" } | { kind: "detections" } | { kind: "people" } | { kind: "lockdown" } | { kind: "alert"; presetId?: string } | { kind: "integrations" } | { kind: "tag"; cameraId?: string } | null;
+type ModalKind = { kind: "incident" } | { kind: "cameras" } | { kind: "detections" } | { kind: "people" } | { kind: "lockdown" } | { kind: "alert"; presetId?: string } | { kind: "integrations" } | { kind: "tag"; cameraId?: string } | null;
 
 export function Console() {
   const { site, state, connected } = useLive();
@@ -122,6 +123,11 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
         </button>
         <button onClick={() => setModal({ kind: "tag" })}>Tag person</button>
         <button className="btn-alert" onClick={() => setModal({ kind: "alert" })}>🚨 Alert</button>
+        {state.incident ? (
+          <a className="button-link" href="/incidents">Incidents</a>
+        ) : (
+          <button onClick={() => setModal({ kind: "incident" })} title="Start recording an incident">Start incident</button>
+        )}
         <a className="button-link" href="/settings" title="Connection settings">⚙</a>
         <button className={state.lockdown ? "btn-primary" : "btn-danger"} onClick={() => setModal({ kind: "lockdown" })}>
           {state.lockdown ? "Lift lockdown" : "Lockdown"}
@@ -129,6 +135,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
       </header>
 
       {state.lockdown && <div className="banner danger">CAMPUS LOCKDOWN ACTIVE — all controlled doors held locked</div>}
+      <OpenIncidentBar state={state} />
       <ActiveAlerts state={state} />
       <WatchHits state={state} idx={idx} onShowDoor={(id) => (setEditing(false), setFollowId(null), select({ kind: "door", id }))} onFollow={(id) => setFollowId(id)} />
       <CriticalDetections state={state} idx={idx} onReview={() => setModal({ kind: "detections" })} onLockdown={() => setModal({ kind: "alert", presetId: "lockdown" })} />
@@ -203,6 +210,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
       {modal?.kind === "cameras" && <AllCamerasDialog state={state} idx={idx} onClose={() => setModal(null)} onShowOnMap={(id) => (setEditing(false), setFollowId(null), select({ kind: "camera", id }))} />}
       {modal?.kind === "lockdown" && <LockdownDialog active={state.lockdown} onClose={() => setModal(null)} />}
       {modal?.kind === "alert" && <AlertCenter site={site} state={state} initialPresetId={modal.presetId} onClose={() => setModal(null)} />}
+      {modal?.kind === "incident" && <StartIncidentDialog onClose={() => setModal(null)} />}
       {modal?.kind === "detections" && (
         <DetectionsPanel
           state={state}

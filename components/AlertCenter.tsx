@@ -45,6 +45,7 @@ export function AlertCenter({ site, state, onClose, initialPresetId }: { site: P
   const allZones = useMemo(() => floors.flatMap((f) => f.zones.map((z) => ({ ...z, floorId: f.id }))), [floors]);
   const buildings = [...new Set(allZones.map((z) => z.building).filter((b): b is string => !!b))];
 
+  const [drill, setDrill] = useState(false);
   const [preset, setPreset] = useState<AlertPreset>(ALERT_PRESETS.find((p) => p.id === initialPresetId) ?? ALERT_PRESETS[0]);
   const [title, setTitle] = useState(preset.title);
   const [message, setMessage] = useState(preset.message);
@@ -60,7 +61,8 @@ export function AlertCenter({ site, state, onClose, initialPresetId }: { site: P
     setPreset(p);
     setTitle(p.title);
     setMessage(p.message);
-    setChannels(p.channels);
+    // In drill mode SaferWatch stays off unless someone ticks it on purpose.
+    setChannels(drill ? p.channels.filter((c) => c !== "saferwatch") : p.channels);
     setConfirming(false);
   };
   const toggleZone = (id: string) => setZones((z) => (z.includes(id) ? z.filter((x) => x !== id) : [...z, id]));
@@ -74,7 +76,7 @@ export function AlertCenter({ site, state, onClose, initialPresetId }: { site: P
   const submit = () => {
     if (preset.level !== "info" && !confirming) return setConfirming(true);
     run(async () => {
-      const alert = (await send("/api/alerts", { presetId: preset.id, level: preset.level, title, message, zoneIds, scopeLabel: scope, channels })) as Alert;
+      const alert = (await send("/api/alerts", { presetId: preset.id, level: preset.level, title, message, zoneIds, scopeLabel: scope, channels, drill })) as Alert;
       setResult(alert);
     });
   };
@@ -102,6 +104,20 @@ export function AlertCenter({ site, state, onClose, initialPresetId }: { site: P
           <h3>🚨 Send alert</h3>
           <button className="btn-ghost" onClick={onClose}>✕</button>
         </div>
+
+        <label className={`drill-toggle${drill ? " on" : ""}`}>
+          <input
+            type="checkbox"
+            checked={drill}
+            onChange={(e) => {
+              setDrill(e.target.checked);
+              setConfirming(false);
+              // Don't notify SaferWatch (and through it, police) about a drill.
+              if (e.target.checked) setChannels((cs) => cs.filter((c) => c !== "saferwatch"));
+            }}
+          />
+          <span><strong>This is a drill</strong> — marked “DRILL” on every channel, SaferWatch left off, and logged in the drill log</span>
+        </label>
 
         <div className="ac-section">1 · What</div>
         <div className="preset-grid">
@@ -163,11 +179,11 @@ export function AlertCenter({ site, state, onClose, initialPresetId }: { site: P
         {error && <p className="error">{error}</p>}
         <div className="ac-summary" style={{ borderColor: preset.color }}>
           <div>
-            <strong>{title || "(no title)"}</strong> → {scope || "no areas chosen"}
+            <strong>{drill ? "DRILL: " : ""}{title || "(no title)"}</strong> → {scope || "no areas chosen"}
             <div className="muted small">via {channels.map((c) => CHANNEL_LABELS[c]).join(", ") || "nothing selected"}</div>
           </div>
           <button className={preset.level === "info" ? "btn-primary" : "btn-danger"} disabled={busy || !ready} onClick={submit}>
-            {busy ? "Sending…" : confirming ? `Confirm: send ${preset.label.toUpperCase()}` : preset.level === "info" ? "Send" : `Send ${preset.label}`}
+            {busy ? "Sending…" : confirming ? `Confirm: send ${drill ? "DRILL " : ""}${preset.label.toUpperCase()}` : preset.level === "info" ? "Send" : `Send ${drill ? "drill: " : ""}${preset.label}`}
           </button>
         </div>
       </div>
