@@ -47,7 +47,7 @@ Zoom: scroll with `Ctrl`, or press `5` to fit the page. Undo: `Ctrl+Z`.
 
 ## After a renovation
 
-Open the file → move/delete walls with `S` or `N` → fix the room outline and label → **Save**.
+Open the file → move/delete walls with `S` or `N` → fix the label if the room changed → **Save**.
 Then import it into the console so the security map matches (Import floor plan — coming next).
 
 ## Printing
