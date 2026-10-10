@@ -6,7 +6,7 @@ import type { SiteLayout } from "@/lib/core/overrides";
 import { bounds, centroid, DOOR_LOCK_LABELS, type CameraPlacement, type DoorLockType, type DoorPlacement, type Floor, type Point, type Zone, type ZoneKind } from "@/lib/core/site";
 import { applyPlan, placer, removeBuilding, startPlacement, turnedSize, type Placement } from "@/lib/floorplan/importPlan";
 import { ImportPlanDialog, type PlanChoice } from "./ImportPlan";
-import { drawnBuildings, lockColor, markerScale, PlanDrawings, zoneLabel } from "./MapView";
+import { drawnBuildings, lockColor, markerScale, PlanDrawings, zoneLabel, ZoneLabelText } from "./MapView";
 import { useAction } from "./Panels";
 import { send } from "./useLive";
 import { useZoomPan, ZoomButtons } from "./useZoomPan";
@@ -481,11 +481,7 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
                     onDoubleClick={selected ? insertCorner(z) : undefined}
                     onClick={(e) => e.stopPropagation()}
                   />
-                  {label.visible && (
-                    <text x={label.x} y={label.y} className="zone-label" fontSize={label.fontSize}>
-                      {z.name}
-                    </text>
-                  )}
+                  {label.visible && <ZoneLabelText label={label} />}
                 </g>
               );
             })}

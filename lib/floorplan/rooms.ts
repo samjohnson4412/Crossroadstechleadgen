@@ -16,8 +16,6 @@ export interface PlanRoom {
   lines: string[];
   /** More than one label landed in this room: probably a missing wall. */
   merged?: boolean;
-  /** Where its (first) label was drawn. */
-  labelAt?: Point;
 }
 export interface PlanDoor {
   position: Point;
@@ -200,7 +198,6 @@ export function findRooms(plan: ParsedPlan, opts: { tolerance?: number; minArea?
       continue;
     }
     if (rooms[r].lines.length) rooms[r].merged = true;
-    else rooms[r].labelAt = label.at;
     rooms[r].lines.push(...label.lines);
   }
   for (const r of rooms) if (r.merged) warnings.push(`"${r.lines.join(" ")}" are in one room — is a wall missing between them?`);

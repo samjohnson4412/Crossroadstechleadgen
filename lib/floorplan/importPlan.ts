@@ -133,8 +133,6 @@ export function applyPlan(opts: {
     const keep = same?.length === 1 && room.lines.length && !allIds.has(same[0].id) ? same[0] : undefined;
     const zone: Zone = { id: keep ? keep.id : newId(`${prefix}-${slug(name)}`), name, kind: keep?.kind ?? kindFor(name), building, polygon: room.polygon.map(at) };
     allIds.add(zone.id);
-    const lp = labelPoint(room);
-    if (lp) zone.labelAt = at(lp);
     roomZone.set(room.index, zone);
   }
   const newZones = [...roomZone.values()];
@@ -254,14 +252,6 @@ function smallestContaining(zones: Zone[], p: Point) {
   return zones.filter((z) => pointInPolygon(p, z.polygon)).sort((a, b) => Math.abs(signedArea(a.polygon)) - Math.abs(signedArea(b.polygon)))[0];
 }
 
-/** Where the room's label was drawn, when the middle of the shape would be a bad spot (L/U-shaped halls). */
-function labelPoint(room: PlanRoom): Point | undefined {
-  if (!room.labelAt) return undefined;
-  const c = areaCentroid(room.polygon);
-  const b = bboxOf(room.polygon);
-  const nearMiddle = Math.hypot(room.labelAt.x - c.x, room.labelAt.y - c.y) < Math.min(b.w, b.h) * 0.2 && pointInPolygon(c, room.polygon);
-  return nearMiddle ? undefined : room.labelAt;
-}
 
 export interface RemoveReport {
   rooms: number;

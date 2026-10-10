@@ -1,6 +1,7 @@
 "use client";
 
-import { bounds, centroid, doorLockType, type DoorPlacement, type Floor, type Point, type Zone } from "@/lib/core/site";
+import { roomLabel } from "@/lib/core/labels";
+import { doorLockType, type DoorPlacement, type Floor, type Point, type Zone } from "@/lib/core/site";
 import type { DoorStatus } from "@/lib/integrations/types";
 import type { SimActorView } from "@/lib/integrations/simulator";
 import { colorOf } from "./CameraFeed";
@@ -52,12 +53,32 @@ export function markerScale(floor: Floor, vbWidth: number) {
   return (floor.width / 1000) * Math.max(0.28, Math.sqrt(vbWidth / floor.width));
 }
 
-/** Room name position and size; hidden when it would be too small to read at this zoom. */
+/** Room name position and size (fitted to the room); hidden when it would be too small to read at this zoom. */
 export function zoneLabel(z: Zone, k: number, pxPerUnit: number) {
-  const c = z.labelAt ?? centroid(z.polygon);
-  const b = bounds(z.polygon);
-  const fontSize = Math.min(13 * k, (b.w * 0.9) / Math.max(4, z.name.length * 0.58), b.h * 0.45);
-  return { x: c.x, y: c.y, fontSize, visible: fontSize * pxPerUnit >= 7 };
+  const label = roomLabel(z.name, z.polygon, 13 * k);
+  return { ...label, visible: label.fontSize * pxPerUnit >= 7 };
+}
+
+/** A room's name, on one or two lines, or turned sideways. */
+export function ZoneLabelText({ label }: { label: ReturnType<typeof zoneLabel> }) {
+  const lh = label.fontSize * 1.1;
+  return (
+    <text
+      x={label.x}
+      y={label.y}
+      className="zone-label"
+      fontSize={label.fontSize}
+      transform={label.vertical ? `rotate(-90 ${label.x} ${label.y})` : undefined}
+    >
+      {label.lines.length === 1
+        ? label.lines[0]
+        : label.lines.map((line, i) => (
+            <tspan key={i} x={label.x} y={label.y + (i - (label.lines.length - 1) / 2) * lh}>
+              {line}
+            </tspan>
+          ))}
+    </text>
+  );
 }
 
 /** Buildings drawn from an imported floor plan: a solid outline that hides the photo, and the walls. */
@@ -132,11 +153,7 @@ export function MapView({ floor, doors, selection, onSelect, overlay, simActors,
                 strokeWidth={isDrawn ? 1.5 : 2 * k}
                 vectorEffect={isDrawn ? "non-scaling-stroke" : undefined}
               />
-              {!compact && label.visible && (
-                <text x={label.x} y={label.y} className="zone-label" fontSize={label.fontSize}>
-                  {z.name}
-                </text>
-              )}
+              {!compact && label.visible && <ZoneLabelText label={label} />}
             </g>
           );
         })}

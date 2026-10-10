@@ -37,8 +37,6 @@ export interface Zone {
   polygon: Point[];
   /** Which building it's in, for display ("Education", "Sanctuary", ...). */
   building?: string;
-  /** Where to write its name, when the middle of the shape is a bad spot (L- or U-shaped halls). */
-  labelAt?: Point;
 }
 
 export interface CameraPlacement {
