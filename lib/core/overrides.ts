@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { Building, Passage } from "./site.ts";
+import type { Building, ParkedDevices, Passage } from "./site.ts";
 
 /**
  * Edits operators make from the console (e.g. renaming rooms), stored outside
@@ -11,6 +11,7 @@ export type NamedKind = "zone" | "camera" | "door" | "display";
 export interface SiteLayout {
   buildings: Building[];
   passages: Passage[];
+  parked?: ParkedDevices;
 }
 
 export interface SiteOverrides {

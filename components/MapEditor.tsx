@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { closestOnSegment, distanceToOutline, pointInPolygon, polygonsTouch } from "@/lib/core/geometry";
 import type { SiteLayout } from "@/lib/core/overrides";
 import { bounds, centroid, DOOR_LOCK_LABELS, type CameraPlacement, type DoorLockType, type DoorPlacement, type Floor, type Point, type Zone, type ZoneKind } from "@/lib/core/site";
-import { applyPlan, placer, startPlacement, turnedSize, type Placement } from "@/lib/floorplan/importPlan";
+import { applyPlan, placer, removeBuilding, startPlacement, turnedSize, type Placement } from "@/lib/floorplan/importPlan";
 import { ImportPlanDialog, type PlanChoice } from "./ImportPlan";
 import { drawnBuildings, lockColor, markerScale, PlanDrawings, zoneLabel } from "./MapView";
 import { useAction } from "./Panels";
@@ -63,6 +63,8 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
   /** A Blue Iris camera picked from the "not on the map" list, waiting to be clicked onto the map. */
   const [pendingCam, setPendingCam] = useState<{ integration: string; externalId: string; name: string } | null>(null);
   const [camFilter, setCamFilter] = useState("");
+  /** A parked badge door / SMART Board picked from "not on the map", waiting to be clicked onto the map. */
+  const [pendingParked, setPendingParked] = useState<{ kind: "door" | "display"; id: string } | null>(null);
   const [uniDoors, setUniDoors] = useState<{ externalId: string; name: string }[]>([]);
   const dragRef = useRef<Drag | null>(null);
   /** The click that ends a draw/drag/placement must not also clear the selection. */
@@ -213,6 +215,19 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
     } else if (tool === "display") {
       const z = zoneAt(p);
       if (!z) return setHint("Click inside the room the SMART Board is in.");
+      if (pendingParked?.kind === "display") {
+        const pid = pendingParked.id;
+        commit((d) => {
+          const board = d.parked?.displays.find((x) => x.id === pid);
+          if (!board || !d.parked) return;
+          d.parked.displays = d.parked.displays.filter((x) => x.id !== pid);
+          floorOf(d).displays.push({ ...board, position: { x: Math.round(p.x), y: Math.round(p.y) }, zoneId: z.id });
+        });
+        setPendingParked(null);
+        setSel({ kind: "display", id: pid });
+        setTool("select");
+        return;
+      }
       const id = rid("board");
       commit((d) =>
         floorOf(d).displays.push({ id, name: `${z.name} board`, position: { x: Math.round(p.x), y: Math.round(p.y) }, zoneId: z.id, source: { integration: displayIntegration ?? "displays", externalId: id } }),
@@ -225,6 +240,23 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
         .sort((a, b) => a.d - b.d)
         .slice(0, 2);
       if (near.length < 2) return setHint("A door needs a room on each side — draw the rooms first.");
+      if (pendingParked?.kind === "door") {
+        const pid = pendingParked.id;
+        commit((d) => {
+          const door = d.parked?.doors.find((x) => x.id === pid);
+          if (!door || !d.parked) return;
+          d.parked.doors = d.parked.doors.filter((x) => x.id !== pid);
+          // Keep the side that's still on the map (e.g. the outdoor area); the room clicked on is the other side.
+          const kept = door.between.find((z) => z && d.buildings.some((b) => b.floors.some((f) => f.zones.some((x) => x.id === z))));
+          const other = near.find((n) => n.z.id !== kept)!.z.id;
+          const between: [string, string] = kept ? (door.between[0] === kept ? [kept, other] : [other, kept]) : [near[0].z.id, near[1].z.id];
+          floorOf(d).doors.push({ ...door, position: { x: Math.round(p.x), y: Math.round(p.y) }, between });
+        });
+        setPendingParked(null);
+        setSel({ kind: "door", id: pid });
+        setTool("select");
+        return;
+      }
       const id = rid("door");
       const door: DoorPlacement = { id, name: `${near[0].z.name} door`, position: { x: Math.round(p.x), y: Math.round(p.y) }, between: [near[0].z.id, near[1].z.id] };
       commit((d) => floorOf(d).doors.push(door));
@@ -333,6 +365,19 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
     }
   }
 
+  const buildingsHere = [...new Set([...floor.zones.map((z) => z.building), ...(floor.drawings ?? []).map((d) => d.building)].filter((b): b is string => !!b))].sort();
+
+  function deleteBuilding(name: string) {
+    const rooms = floor.zones.filter((z) => z.building === name).length;
+    if (!confirm(`Delete ${name} from ${floor.name}?\n\nIts floor plan, ${rooms} rooms and their doors are removed. Cameras in it go back to "not on the map yet"; badge doors and SMART Boards are set aside so you can place them again.\n\n(Undo works until you save.)`)) return;
+    const { layout, report } = removeBuilding(draftRef.current, floor.id, name);
+    setHistory((h) => [...h.slice(-49), draftRef.current]);
+    setDraft(layout);
+    setSel(null);
+    const parts = [`${report.rooms} rooms`, `${report.doors} doors`, report.cameras.length ? `${report.cameras.length} cameras (back in the list)` : "", report.parked.length ? `${report.parked.length} badge doors / boards set aside` : ""].filter(Boolean);
+    setHint(`Deleted ${name}: ${parts.join(", ")}. Save map to keep it.`);
+  }
+
   const save = () =>
     run(async () => {
       await send("/api/site/layout", draft, "PUT");
@@ -388,7 +433,7 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
         ) : (
         <div className="editor-bar">
           {TOOLS.map((t) => (
-            <button key={t.id} className={tool === t.id ? "on" : ""} onClick={() => (setTool(t.id), setShapePoints([]), setHint(null), setPendingCam(null))}>
+            <button key={t.id} className={tool === t.id ? "on" : ""} onClick={() => (setTool(t.id), setShapePoints([]), setHint(null), setPendingCam(null), setPendingParked(null))}>
               {t.label}
             </button>
           ))}
@@ -572,26 +617,37 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
               {(Object.keys(DOOR_LOCK_LABELS) as DoorLockType[]).map((t) => <span key={t}><i style={{ background: `var(--lock-${t})` }} />{DOOR_LOCK_LABELS[t]}</span>)}
               <span><i style={{ background: "var(--door-passive)" }} />Lock not recorded</span>
             </div>
-            <div className="section-title">Floor plans on this level</div>
-            {!floor.drawings?.length && <p className="muted small">None yet. Use ⇪ Import floor plan.</p>}
+            <div className="section-title">Buildings on this level</div>
+            {buildingsHere.length === 0 && <p className="muted small">None yet. Use ⇪ Import floor plan.</p>}
             <ul className="conn-list">
-              {floor.drawings?.map((dr) => (
-                <li key={dr.building}>
-                  <span>{dr.building}</span>
-                  <button
-                    className="btn-ghost small-btn"
-                    title="Remove this drawing (walls). Its rooms stay; delete them separately if you need to."
-                    onClick={() => {
-                      if (confirm(`Remove the ${dr.building} floor plan drawing from ${floor.name}? Its rooms stay on the map. (Undo works until you save.)`))
-                        commit((d) => (floorOf(d).drawings = (floorOf(d).drawings ?? []).filter((x) => x.building !== dr.building)));
-                    }}
-                  >
-                    Remove drawing
+              {buildingsHere.map((b) => (
+                <li key={b}>
+                  <span>{b}{floor.drawings?.some((dr) => dr.building === b) && <span className="muted small"> · floor plan</span>}</span>
+                  <button className="btn-ghost small-btn" title="Delete this building's plan, rooms and doors on this level" onClick={() => deleteBuilding(b)}>
+                    Delete
                   </button>
                 </li>
               ))}
             </ul>
-            <p className="muted small">To swap in a new version, use Import floor plan → “Replaces a building”.</p>
+            <p className="muted small">To swap in a new version of a plan, use Import floor plan → “Replaces a building”.</p>
+            {((draft.parked?.doors.length ?? 0) > 0 || (draft.parked?.displays.length ?? 0) > 0) && (
+              <>
+                <div className="section-title">Badge doors &amp; boards not on the map <span className="count">{(draft.parked?.doors.length ?? 0) + (draft.parked?.displays.length ?? 0)}</span></div>
+                <p className="muted small">They kept their IDentiPASS / UniFi / SMART link. Click one, then click where it goes.</p>
+                <ul className="unplaced">
+                  {draft.parked?.doors.map((x) => (
+                    <li key={x.id}>
+                      <button className={pendingParked?.id === x.id ? "on" : ""} onClick={() => (setPendingParked({ kind: "door", id: x.id }), setTool("door"), setHint(`Click on the wall where "${x.name}" is.`))}>▣ {x.name}</button>
+                    </li>
+                  ))}
+                  {draft.parked?.displays.map((x) => (
+                    <li key={x.id}>
+                      <button className={pendingParked?.id === x.id ? "on" : ""} onClick={() => (setPendingParked({ kind: "display", id: x.id }), setTool("display"), setHint(`Click inside the room where "${x.name}" is.`))}>▭ {x.name}</button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
             {floor.cameras.length > 0 && (
               <button
                 className="btn-ghost small-btn"

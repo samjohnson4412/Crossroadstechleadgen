@@ -65,8 +65,9 @@ Zoom: scroll with `Ctrl`, or press `5` to fit the page. Undo: `Ctrl+Z`.
 
 Every enclosed area becomes a room named by its label, and every door line a door. Then place
 cameras and link badge doors yourself in Edit map. Cameras, badge doors and stairs that pointed at
-replaced rooms move to the new room in the same spot. To take a drawing off, use **Remove drawing**
-under "Floor plans on this level" in Edit map (its rooms stay).
+replaced rooms move to the new room in the same spot. To take a building off a level, use **Delete**
+under "Buildings on this level" in Edit map: its plan, rooms and doors go; its cameras go back to
+"not on the map yet"; badge doors and SMART Boards are set aside (keeping their links) to place again.
 
 ## After a renovation
 

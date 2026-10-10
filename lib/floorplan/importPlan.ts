@@ -262,3 +262,63 @@ function labelPoint(room: PlanRoom): Point | undefined {
   const nearMiddle = Math.hypot(room.labelAt.x - c.x, room.labelAt.y - c.y) < Math.min(b.w, b.h) * 0.2 && pointInPolygon(c, room.polygon);
   return nearMiddle ? undefined : room.labelAt;
 }
+
+export interface RemoveReport {
+  rooms: number;
+  doors: number;
+  cameras: string[];
+  /** Badge doors and SMART Boards set aside to place again. */
+  parked: string[];
+}
+
+/**
+ * Takes a building off one level: its drawing, rooms and doors. Cameras in it go
+ * back to "not on the map"; badge doors and SMART Boards are parked so they keep
+ * their links to IDentiPASS / UniFi / SMART and can be placed again.
+ */
+export function removeBuilding(input: SiteLayout, floorId: string, building: string): { layout: SiteLayout; report: RemoveReport } {
+  const layout: SiteLayout = structuredClone(input);
+  const floors = layout.buildings.flatMap((b) => b.floors);
+  const floor = floors.find((f) => f.id === floorId);
+  if (!floor) throw new Error(`No level "${floorId}"`);
+  const gone = new Set(floor.zones.filter((z) => sameName(z.building, building)).map((z) => z.id));
+  const parked = (layout.parked ??= { doors: [], displays: [] });
+  const report: RemoveReport = { rooms: gone.size, doors: 0, cameras: [], parked: [] };
+  const goneZones = floor.zones.filter((z) => gone.has(z.id));
+  const inside = (p: Point) => goneZones.some((z) => pointInPolygon(p, z.polygon));
+
+  floor.zones = floor.zones.filter((z) => !gone.has(z.id));
+  floor.drawings = (floor.drawings ?? []).filter((d) => !sameName(d.building, building));
+  layout.passages = layout.passages.filter((p) => !p.between.some((z) => gone.has(z)));
+
+  for (const f of floors) {
+    f.doors = f.doors.filter((d) => {
+      if (!d.between.some((z) => gone.has(z))) return true;
+      if (d.source) {
+        parked.doors.push({ ...d, between: d.between.map((z) => (gone.has(z) ? "" : z)) as [string, string] });
+        report.parked.push(d.name);
+      } else report.doors++;
+      return false;
+    });
+    f.displays = f.displays.filter((d) => {
+      if (!gone.has(d.zoneId)) return true;
+      parked.displays.push({ ...d, zoneId: "" });
+      report.parked.push(d.name);
+      return false;
+    });
+  }
+  // Cameras: the ones mounted in the building, or that only watched it, come off the map.
+  for (const f of floors) {
+    f.cameras = f.cameras.filter((c) => {
+      const watched = c.covers.filter((z) => !gone.has(z));
+      const mountedHere = f.id === floor.id && (inside(c.position) || (c.covers.length > 0 && watched.length === 0));
+      if (mountedHere) {
+        report.cameras.push(c.name);
+        return false;
+      }
+      c.covers = watched;
+      return true;
+    });
+  }
+  return { layout, report };
+}

@@ -144,11 +144,18 @@ export interface IntegrationConfig {
   optional?: boolean;
 }
 
+/** Devices taken off the map (e.g. their building's plan was deleted), waiting to be placed again. */
+export interface ParkedDevices {
+  doors: DoorPlacement[];
+  displays: DisplayPlacement[];
+}
+
 export interface SiteConfig {
   id: string;
   name: string;
   buildings: Building[];
   passages: Passage[];
+  parked?: ParkedDevices;
   integrations: IntegrationConfig[];
 }
 

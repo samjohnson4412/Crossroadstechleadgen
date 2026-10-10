@@ -189,12 +189,12 @@ export class Runtime {
   }
 
   layout(): SiteLayout {
-    return { buildings: this.site.buildings, passages: this.site.passages };
+    return { buildings: this.site.buildings, passages: this.site.passages, parked: this.site.parked };
   }
 
   /** Save a layout drawn in the map editor, then restart on it. */
   async saveLayout(layout: SiteLayout, actor: Actor) {
-    const candidate = { ...this.site, buildings: layout.buildings, passages: layout.passages };
+    const candidate = { ...this.site, buildings: layout.buildings, passages: layout.passages, parked: layout.parked };
     validateSite(candidate);
     await this.audited(actor, "layout.save", this.site.name, async () => {
       this.overrides.layout = structuredClone(layout);

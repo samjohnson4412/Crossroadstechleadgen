@@ -104,7 +104,7 @@ function MobileLoaded({ site, state, connected }: { site: PublicSite; state: Liv
           ) : (
             <div>
               <h3>Tracking</h3>
-              {active.length === 0 && <p className="muted">Nobody is being tracked. Tag a person from any camera to start.</p>}
+              {active.length === 0 && <p className="muted">Nobody is being tracked. Use Track a person on any camera to start.</p>}
               <ul className="m-list">
                 {active.map((t) => {
                   const last = lastSighting(t);
@@ -216,7 +216,7 @@ function MobileCamera({ cameraId, state, idx, onBack, onTag, onFollow }: { camer
       <button className="btn-ghost small-btn" onClick={onBack}>‹ Cameras</button>
       <CameraFeed camera={cam} stream={state.streams[cam.id]} zones={idx.zones} sim={state.sim} emphasis live />
       <div className="m-actions">
-        <button className="m-wide" onClick={() => onTag(cam.id)}>Tag a person here</button>
+        <button className="m-wide" onClick={() => onTag(cam.id)}>Track a person here</button>
         {active.map((t) => (
           <button key={t.id} className="m-wide btn-primary" disabled={busy} onClick={() => run(async () => { await send(`/api/tracks/${t.id}/sightings`, { cameraId: cam.id }); onFollow(t.id); })}>
             {t.label} is here

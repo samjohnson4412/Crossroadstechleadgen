@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { findRooms } from "../lib/floorplan/rooms.ts";
-import { applyPlan, readPlan } from "../lib/floorplan/importPlan.ts";
+import { applyPlan, readPlan, removeBuilding } from "../lib/floorplan/importPlan.ts";
 import { doorTypeFromColor, parsePathData, parsePlanSvg } from "../lib/floorplan/svg.ts";
 import { rect, type Floor } from "../lib/core/site.ts";
 import type { SiteLayout } from "../lib/core/overrides.ts";
@@ -109,4 +109,38 @@ test("adding a plan as a new building leaves other rooms alone", () => {
   assert.equal(f.zones.length, 5);
   assert.ok(f.zones.find((z) => z.id === "a"));
   assert.ok(f.zones.filter((z) => z.building === "New").every((z) => z.polygon.every((p) => p.x >= 340 && p.x <= 660)));
+});
+
+test("deleting a building takes its rooms and doors off; cameras unmapped, badge doors parked", () => {
+  const floor: Floor = {
+    id: "l1",
+    name: "L1",
+    width: 1000,
+    height: 1000,
+    zones: [
+      { id: "a", name: "A", kind: "room", building: "Gone", polygon: rect(0, 0, 100, 100) },
+      { id: "b", name: "B", kind: "room", building: "Gone", polygon: rect(100, 0, 100, 100) },
+      { id: "yard", name: "Yard", kind: "outdoor", polygon: rect(0, 100, 300, 100) },
+    ],
+    cameras: [
+      { id: "in", name: "Inside cam", position: { x: 50, y: 50 }, covers: ["a"], source: { integration: "bi", externalId: "in" } },
+      { id: "out", name: "Yard cam", position: { x: 50, y: 150 }, covers: ["yard", "a"], source: { integration: "bi", externalId: "out" } },
+    ],
+    doors: [
+      { id: "ab", name: "A-B", position: { x: 100, y: 50 }, between: ["a", "b"] },
+      { id: "badge", name: "Front", position: { x: 50, y: 100 }, between: ["yard", "a"], source: { integration: "ipass", externalId: "Front" } },
+    ],
+    displays: [{ id: "sb", name: "Board A", position: { x: 20, y: 20 }, zoneId: "a", source: { integration: "smart", externalId: "sb" } }],
+    drawings: [{ building: "Gone", outline: "", walls: "M0 0L1 1" }],
+  };
+  const { layout, report } = removeBuilding({ buildings: [{ id: "x", name: "X", floors: [floor] }], passages: [{ between: ["b", "yard"] }] }, "l1", "Gone");
+  const f = layout.buildings[0].floors[0];
+  assert.deepEqual(f.zones.map((z) => z.id), ["yard"]);
+  assert.deepEqual(f.drawings, []);
+  assert.deepEqual(layout.passages, []);
+  assert.deepEqual(f.cameras.map((c) => [c.id, c.covers]), [["out", ["yard"]]]);
+  assert.deepEqual(report.cameras, ["Inside cam"]);
+  assert.equal(f.doors.length, 0);
+  assert.deepEqual(layout.parked?.doors.map((d) => [d.id, d.between, d.source?.externalId]), [["badge", ["yard", ""], "Front"]]);
+  assert.deepEqual(layout.parked?.displays.map((d) => d.id), ["sb"]);
 });

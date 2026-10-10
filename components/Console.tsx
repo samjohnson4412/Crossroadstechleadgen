@@ -121,7 +121,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
         <button className={reviewCount ? "btn-warn" : ""} onClick={() => setModal({ kind: "detections" })}>
           Detections{reviewCount > 0 && <span className="count">{reviewCount}</span>}
         </button>
-        <button onClick={() => setModal({ kind: "tag" })}>Tag person</button>
+        <button onClick={() => setModal({ kind: "tag" })}>Track person</button>
         <button className="btn-alert" onClick={() => setModal({ kind: "alert" })}>🚨 Alert</button>
         {state.incident ? (
           <a className="button-link" href="/incidents">Incidents</a>
@@ -153,7 +153,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
       {editing ? (
         <main className="main">
           <MapEditor
-            initial={{ buildings: site.buildings, passages: site.passages }}
+            initial={{ buildings: site.buildings, passages: site.passages, parked: site.parked }}
             floorId={floorId}
             showBackground={showBackground}
             cameraIntegrations={state.integrations.filter((i) => i.capabilities.includes("cameras") && i.health.state !== "unconfigured").map((i) => ({ id: i.id, name: i.name }))}
@@ -331,7 +331,7 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
         onClick={big ? undefined : () => onSelect({ kind: "camera", id: cameraId })}
         footer={
           <>
-            <button onClick={(e) => (e.stopPropagation(), onTag(cameraId))}>Tag person</button>
+            <button onClick={(e) => (e.stopPropagation(), onTag(cameraId))}>Track person</button>
             {active.map((t) => (
               <button key={t.id} disabled={busy} onClick={(e) => (e.stopPropagation(), run(async () => { await send(`/api/tracks/${t.id}/sightings`, { cameraId }); onFollow(t.id); }))}>
                 {t.label} here
@@ -356,7 +356,7 @@ function SelectionPanel({ selection, state, idx, graph, onSelect, onTag, onFollo
           <div className={unlocked ? "warn" : ""}><strong>{unlocked}</strong><span>unlocked</span></div>
           <div><strong>{open}</strong><span>open now</span></div>
         </div>
-        <p className="muted small">Click an area to see its cameras, a door to lock or unlock it, or a camera to watch it. Tag a person from any camera to start tracking them.</p>
+        <p className="muted small">Click an area to see its cameras, a door to lock or unlock it, or a camera to watch it. Use Track person on any camera to follow someone.</p>
       </div>
     );
   }
