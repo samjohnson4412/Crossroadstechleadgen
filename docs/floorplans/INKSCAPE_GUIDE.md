@@ -17,13 +17,12 @@ Inkscape is free: **inkscape.org** → Download (Windows). One file per building
 | Key | Tool | Use it for |
 |---|---|---|
 | `B` | **Pen** | Walls. Click, click, click… hold `Ctrl` for straight/90° lines. `Enter` to finish a wall. |
-| `R` | **Rectangle** | Room outlines (most rooms). Drag from corner to corner. |
-| `B` | **Pen** (again) | Odd-shaped rooms: click each corner, click the first point to close. |
+| `B` | **Pen** (again) | Door lines and dividers: two clicks, `Enter`. |
 | `T` | **Text** | Room number / name. Click **inside** the room and type. |
 | `S` | **Select** | Click to pick, drag to move, `Delete` to remove. |
 | `N` | **Node edit** | Move one corner of a wall or room. |
 
-Before drawing, **click the layer** you want in the Layers panel (Walls, Doors, Rooms or Labels).
+Before drawing, **click the layer** you want in the Layers panel (Walls, Doors, Dividers or Labels).
 New shapes take that layer's style automatically.
 
 **Snapping** (`%` toggles it): keeps corners exactly on other corners so walls meet cleanly.
@@ -31,8 +30,11 @@ Zoom: scroll with `Ctrl`, or press `5` to fit the page. Undo: `Ctrl+Z`.
 
 ## Rules that keep it useful for the security map
 
-- **Every room gets an outline on the Rooms layer**, including hallways, lobbies and stairs.
-- **Each room's label goes inside its outline.** First line = room number (E105); an optional second
+- **Every area closed in by walls is a room** — no outlines needed. So walls must really meet:
+  keep snapping on (`%`) so corners click together. A tiny gap merges two rooms into one.
+- **Open areas with no wall between them** (lobby flowing into a hallway, a big commons): draw a
+  blue dashed line on the **Dividers** layer where you want them split. Not printed as a wall.
+- **Each room's label goes inside it.** First line = room number (E105); an optional second
   line = name or use. The console matches labels to rooms by position.
 - **Walls on Walls, doors on Doors.** Draw walls solid, straight through doorways — don't leave gaps.
   Then on the **Doors** layer, draw a **short line over the wall where the door is** (Pen `B`: click
@@ -50,4 +52,4 @@ Then import it into the console so the security map matches (Import floor plan �
 
 ## Printing
 
-**File → Save a Copy…** → choose PDF. Hide the Scan and Rooms layers first (eye icon) for a clean print.
+**File → Save a Copy…** → choose PDF. Hide the Scan and Dividers layers first (eye icon) for a clean print.
