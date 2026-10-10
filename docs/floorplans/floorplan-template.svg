@@ -26,18 +26,19 @@
   <g inkscape:groupmode="layer" id="layer-walls" inkscape:label="Walls"
      style="fill:none;stroke:#000000;stroke-width:4;stroke-linecap:square;stroke-linejoin:miter" />
 
-  <g inkscape:groupmode="layer" id="layer-doors" inkscape:label="Doors"
-     style="fill:none;stroke:#000000;stroke-width:1.5" />
+  <g inkscape:groupmode="layer" id="layer-doors" inkscape:label="Doors (short red line drawn over the wall where each door is)"
+     style="fill:none;stroke:#e53935;stroke-width:8;stroke-linecap:butt" />
 
   <g inkscape:groupmode="layer" id="layer-labels" inkscape:label="Labels (room number / name, placed inside each room)"
      style="font-family:Arial,Helvetica,sans-serif;font-size:18px;fill:#000000;text-anchor:middle" />
 
   <g inkscape:groupmode="layer" id="layer-example" inkscape:label="EXAMPLE – delete this layer">
     <rect x="100" y="100" width="300" height="200" style="fill:#3d8bfd;fill-opacity:0.08;stroke:#3d8bfd;stroke-width:1;stroke-dasharray:4,3" />
-    <path d="M 100,100 H 400 V 300 H 270 M 230,300 H 100 Z" style="fill:none;stroke:#000;stroke-width:4;stroke-linecap:square" />
-    <path d="M 230,300 A 40,40 0 0 1 270,300" style="fill:none;stroke:#000;stroke-width:1.5" />
+    <path d="M 100,100 H 400 V 300 H 100 Z" style="fill:none;stroke:#000;stroke-width:4;stroke-linecap:square" />
+    <path d="M 230,300 H 270" style="fill:none;stroke:#e53935;stroke-width:8;stroke-linecap:butt" />
+    <text x="250" y="322" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;text-anchor:middle;fill:#e53935">door</text>
     <text x="250" y="205" style="font-family:Arial,Helvetica,sans-serif;font-size:18px;text-anchor:middle">E105</text>
     <text x="250" y="230" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;text-anchor:middle;fill:#555">Mrs. Smith – 3rd grade</text>
-    <text x="100" y="340" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;fill:#999">Example: room outline (blue dashed, Rooms layer), walls (black, Walls layer) with a door gap and swing (Doors layer), label inside the room (Labels layer).</text>
+    <text x="100" y="340" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;fill:#999">Example: room outline (blue dashed, Rooms layer), solid walls (black, Walls layer), door = short red line over the wall (Doors layer), label inside the room (Labels layer).</text>
   </g>
 </svg>

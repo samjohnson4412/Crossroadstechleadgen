@@ -34,7 +34,13 @@ Zoom: scroll with `Ctrl`, or press `5` to fit the page. Undo: `Ctrl+Z`.
 - **Every room gets an outline on the Rooms layer**, including hallways, lobbies and stairs.
 - **Each room's label goes inside its outline.** First line = room number (E105); an optional second
   line = name or use. The console matches labels to rooms by position.
-- **Walls on Walls, doors on Doors.** A door is a gap in the wall, optionally with a short arc.
+- **Walls on Walls, doors on Doors.** Draw walls solid, straight through doorways — don't leave gaps.
+  Then on the **Doors** layer, draw a **short line over the wall where the door is** (Pen `B`: click
+  one side of the door opening, `Ctrl`+click the other side, `Enter`). It comes out thick and red
+  automatically. Make it about as long as the door is wide; double doors = one longer line.
+  The console reads each red line as a door connecting the two rooms on either side of it.
+- Optional: put a door's name next to its red line on the **Labels** layer (e.g. "WC West Lobby")
+  if it's a badge/controlled door, so it can be matched to IDentiPASS / UniFi Access.
 - Don't rotate or rescale the page once rooms are drawn.
 
 ## After a renovation
