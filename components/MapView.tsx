@@ -153,7 +153,7 @@ export function MapView({ floor, doors, selection, onSelect, overlay, simActors,
                 strokeWidth={isDrawn ? 1.5 : 2 * k}
                 vectorEffect={isDrawn ? "non-scaling-stroke" : undefined}
               />
-              {!compact && label.visible && <ZoneLabelText label={label} />}
+              {!compact && label.visible && z.name !== "Unlabeled room" && <ZoneLabelText label={label} />}
             </g>
           );
         })}

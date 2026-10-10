@@ -2,10 +2,9 @@ import { distanceToOutline, pointInPolygon } from "./geometry.ts";
 import type { Point } from "./site.ts";
 
 /**
- * Where and how big to write a room's name: at the roomiest spot inside the
- * shape (works for L- and U-shaped halls, where the middle may be outside),
- * sized to the space there, on one line, two lines, or turned sideways for
- * tall narrow rooms — whichever fits the biggest text.
+ * Where and how big to write a room's name. The whole text box must fit inside
+ * the room's walls: we try spots across the room and one line / two lines /
+ * sideways, and keep whichever allows the biggest text.
  */
 export interface RoomLabel {
   x: number;
@@ -15,62 +14,111 @@ export interface RoomLabel {
   vertical: boolean;
 }
 
-/** Average character width as a fraction of font size (bold sans). */
+/** Average character width and line height, as fractions of font size (bold sans). */
 const CHAR = 0.6;
+const LINE = 1.15;
 
-const spotCache = new WeakMap<Point[], { x: number; y: number; w: number; h: number }>();
+const cache = new Map<string, RoomLabel>();
 
 export function roomLabel(name: string, polygon: Point[], maxSize: number): RoomLabel {
-  const spot = labelSpot(polygon);
-  const options: RoomLabel[] = [];
-  const fit = (lines: string[], vertical: boolean) => {
-    const long = Math.max(...lines.map((l) => l.length), 3);
-    const [along, across] = vertical ? [spot.h, spot.w] : [spot.w, spot.h];
-    const size = Math.min(maxSize, (along * 0.88) / (long * CHAR), (across * 0.8) / (lines.length * 1.15));
-    options.push({ x: spot.x, y: spot.y, fontSize: size, lines, vertical });
-  };
-  fit([name], false);
+  const key = `${name}|${maxSize.toFixed(2)}|${polygon.map((p) => `${p.x},${p.y}`).join(" ")}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const label = fitLabel(name, polygon, maxSize);
+  if (cache.size > 2000) cache.clear();
+  cache.set(key, label);
+  return label;
+}
+
+function layouts(name: string): { lines: string[]; vertical: boolean }[] {
+  const out = [{ lines: [name], vertical: false }];
   const words = name.split(" ");
   if (words.length > 1) {
-    // Split where the two lines come out most even.
     let best = 1;
-    for (let i = 1; i < words.length; i++)
-      if (Math.abs(words.slice(0, i).join(" ").length - words.slice(i).join(" ").length) < Math.abs(words.slice(0, best).join(" ").length - words.slice(best).join(" ").length)) best = i;
-    fit([words.slice(0, best).join(" "), words.slice(best).join(" ")], false);
+    const diff = (i: number) => Math.abs(words.slice(0, i).join(" ").length - words.slice(i).join(" ").length);
+    for (let i = 2; i < words.length; i++) if (diff(i) < diff(best)) best = i;
+    out.push({ lines: [words.slice(0, best).join(" "), words.slice(best).join(" ")], vertical: false });
   }
-  if (spot.h > spot.w * 1.6) fit([name], true);
-  // Prefer plain horizontal text unless another option is clearly bigger.
-  return options.reduce((a, b) => (b.fontSize > a.fontSize * 1.15 ? b : a));
+  out.push({ lines: [name], vertical: true });
+  if (words.length > 1) out.push({ lines: out[1].lines, vertical: true });
+  return out;
 }
 
-/** The point inside the shape furthest from its walls, and the open width/height through it. */
-export function labelSpot(polygon: Point[]) {
-  const cached = spotCache.get(polygon);
-  if (cached) return cached;
-  const p = innermostPoint(polygon);
-  const xs = crossings(polygon, p, "x");
-  const ys = crossings(polygon, p, "y");
-  const left = Math.max(...xs.filter((v) => v <= p.x), -Infinity), right = Math.min(...xs.filter((v) => v >= p.x), Infinity);
-  const top = Math.max(...ys.filter((v) => v <= p.y), -Infinity), bottom = Math.min(...ys.filter((v) => v >= p.y), Infinity);
-  const spot = Number.isFinite(left + right + top + bottom)
-    ? { x: (left + right) / 2, y: (top + bottom) / 2, w: right - left, h: bottom - top }
-    : { x: p.x, y: p.y, w: 1, h: 1 };
-  // Re-centring along both axes can step outside an odd shape; then stay on the innermost point.
-  if (!pointInPolygon(spot, polygon)) (spot.x = p.x), (spot.y = p.y);
-  spotCache.set(polygon, spot);
-  return spot;
+function fitLabel(name: string, poly: Point[], maxSize: number): RoomLabel {
+  const xs = poly.map((p) => p.x), ys = poly.map((p) => p.y);
+  const minX = Math.min(...xs), minY = Math.min(...ys), maxX = Math.max(...xs), maxY = Math.max(...ys);
+  // Candidate spots: the point deepest inside, plus a grid across the room.
+  const spots: Point[] = [innermostPoint(poly)];
+  const N = 9;
+  for (let i = 1; i < N; i++) for (let j = 1; j < N; j++) {
+    const p = { x: minX + ((maxX - minX) * i) / N, y: minY + ((maxY - minY) * j) / N };
+    if (pointInPolygon(p, poly)) spots.push(p);
+  }
+  const options = layouts(name);
+  let best: RoomLabel = { x: spots[0].x, y: spots[0].y, fontSize: 0, lines: [name], vertical: false };
+  let bestScore = -1;
+  for (const opt of options) {
+    const long = Math.max(3, ...opt.lines.map((l) => l.length));
+    // Text box per unit of font size, with a little breathing room.
+    let bw = (long * CHAR) / 0.88, bh = (opt.lines.length * LINE) / 0.85;
+    if (opt.vertical) [bw, bh] = [bh, bw];
+    for (const s of spots) {
+      const size = largestFit(poly, s, bw, bh, maxSize);
+      // Prefer horizontal text and the deepest spot unless another is clearly bigger.
+      const score = size * (opt.vertical ? 0.85 : 1) * (opt.lines.length > 1 ? 0.97 : 1) * (s === spots[0] ? 1.03 : 1);
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x: s.x, y: s.y, fontSize: size, lines: opt.lines, vertical: opt.vertical };
+      }
+    }
+  }
+  return best;
 }
 
-/** Where a horizontal ("x") or vertical ("y") line through p crosses the outline. */
-function crossings(poly: Point[], p: Point, axis: "x" | "y"): number[] {
-  const out: number[] = [];
+/** Biggest font size whose text box (bw × bh per unit size), centred at c, stays inside the shape. */
+function largestFit(poly: Point[], c: Point, bw: number, bh: number, maxSize: number) {
+  if (boxInside(poly, c, (bw * maxSize) / 2, (bh * maxSize) / 2)) return maxSize;
+  let lo = 0, hi = maxSize;
+  for (let i = 0; i < 14; i++) {
+    const mid = (lo + hi) / 2;
+    if (boxInside(poly, c, (bw * mid) / 2, (bh * mid) / 2)) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Is the axis-aligned box (centre c, half-sizes hw × hh) inside the polygon? */
+function boxInside(poly: Point[], c: Point, hw: number, hh: number) {
+  const x0 = c.x - hw, x1 = c.x + hw, y0 = c.y - hh, y1 = c.y + hh;
+  for (const p of [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }]) if (!pointInPolygon(p, poly)) return false;
+  // No corner of the room may poke into the box, and no wall may cross it.
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i], b = poly[(i + 1) % poly.length];
-    if (axis === "x") {
-      if (a.y > p.y !== b.y > p.y) out.push(a.x + ((p.y - a.y) * (b.x - a.x)) / (b.y - a.y));
-    } else if (a.x > p.x !== b.x > p.x) out.push(a.y + ((p.x - a.x) * (b.y - a.y)) / (b.x - a.x));
+    if (a.x > x0 && a.x < x1 && a.y > y0 && a.y < y1) return false;
+    if (segmentCrossesBox(a, b, x0, y0, x1, y1)) return false;
   }
-  return out;
+  return true;
+}
+
+function segmentCrossesBox(a: Point, b: Point, x0: number, y0: number, x1: number, y1: number) {
+  // Liang–Barsky clip: does any part of ab lie strictly inside the box?
+  let t0 = 0, t1 = 1;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const clip = (p: number, q: number) => {
+    if (Math.abs(p) < 1e-12) return q > 0;
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return false;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return false;
+      if (r < t1) t1 = r;
+    }
+    return true;
+  };
+  const e = 1e-6;
+  if (clip(-dx, a.x - x0 - e) && clip(dx, x1 - e - a.x) && clip(-dy, a.y - y0 - e) && clip(dy, y1 - e - a.y)) return t1 - t0 > 1e-9;
+  return false;
 }
 
 /** "Pole of inaccessibility": refine a grid toward the point furthest inside the shape. */
@@ -85,7 +133,7 @@ export function innermostPoint(poly: Point[]): Point {
     const d = depth({ x, y });
     return { x, y, h, d, max: d + h * Math.SQRT2 };
   };
-  let queue: Cell[] = [];
+  const queue: Cell[] = [];
   for (let x = minX; x < maxX; x += cell * 2) for (let y = minY; y < maxY; y += cell * 2) queue.push(make(x + cell, y + cell, cell));
   let best = make((minX + maxX) / 2, (minY + maxY) / 2, 0);
   for (const c of queue) if (c.d > best.d) best = c;
