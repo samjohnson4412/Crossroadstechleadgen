@@ -11,6 +11,7 @@ import { ActiveAlerts, AlertCenter } from "./AlertCenter";
 import { CriticalDetections, DetectionsPanel, needsReview } from "./Detections";
 import { MapEditor } from "./MapEditor";
 import { PeoplePanel, type BadgePath } from "./People";
+import { WatchHits } from "./WatchList";
 import { MapView, type Selection, type TrackOverlay } from "./MapView";
 import { AllCamerasDialog, describeDoor, DoorControls, EditableName, EventFeed, indexSite, IntegrationsDialog, LockdownDialog, TagDialog, useAction, type SiteIndex } from "./Panels";
 import { ago, buildOverlay, FollowView, trackColor, TrackSide, useNow } from "./TrackView";
@@ -129,6 +130,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
 
       {state.lockdown && <div className="banner danger">CAMPUS LOCKDOWN ACTIVE — all controlled doors held locked</div>}
       <ActiveAlerts state={state} />
+      <WatchHits state={state} idx={idx} onShowDoor={(id) => (setEditing(false), setFollowId(null), select({ kind: "door", id }))} onFollow={(id) => setFollowId(id)} />
       <CriticalDetections state={state} idx={idx} onReview={() => setModal({ kind: "detections" })} onLockdown={() => setModal({ kind: "alert", presetId: "lockdown" })} />
       {badgePath && (
         <div className="banner path-banner">
@@ -249,7 +251,7 @@ function badgeOverlay(path: BadgePath, floorId: string, idx: SiteIndex): TrackOv
 function latestOpenAlerts(events: SecurityEvent[]) {
   const open: SecurityEvent[] = [];
   for (const e of events) {
-    if (e.integration === "console") continue;
+    if (e.integration === "console" || e.integration === "watchlist") continue;
     if (e.type === "alert.raised") open.push(e);
     if (e.type === "alert.cleared") open.length = 0;
   }

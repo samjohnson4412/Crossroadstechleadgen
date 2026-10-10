@@ -359,3 +359,6 @@ button.on-muted { color: var(--muted); }
 .topic-c input, .contacts td input[type="checkbox"] { width: auto; }
 .topic-legend { list-style: none; padding: 0; margin: 8px 0; }
 .nowrap { white-space: nowrap; }
+.watch-banner { background: #b91c1c; }
+.watch-chip { font-size: 10px; font-weight: 800; letter-spacing: 0.05em; background: #b91c1c; color: white; padding: 1px 6px; border-radius: 6px; margin-left: 6px; }
+.watch-note { display: flex; align-items: center; gap: 6px; }

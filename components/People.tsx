@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Modal, useAction, type SiteIndex } from "./Panels";
 import { ago, useNow } from "./TrackView";
 import { send } from "./useLive";
+import { useWatchlist, WatchListEditor } from "./WatchList";
 
 interface PersonSummary {
   cardId: string;
@@ -45,6 +46,10 @@ export function PeoplePanel({ idx, onClose, onShowPath, onFollow }: { idx: SiteI
   const [date, setDate] = useState(today());
   const [history, setHistory] = useState<BadgeEvent[] | null>(null);
   const { busy, error, run } = useAction();
+  const [view, setView] = useState<"people" | "watch">("people");
+  const watch = useWatchlist();
+  const [watchReason, setWatchReason] = useState("");
+  const watched = (cardId: string) => watch.list?.some((w) => w.cardId === cardId);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -63,7 +68,13 @@ export function PeoplePanel({ idx, onClose, onShowPath, onFollow }: { idx: SiteI
 
   return (
     <Modal title="People (badge tracking)" onClose={onClose}>
-      {!selected ? (
+      <div className="chips tabs">
+        <button className={view === "people" ? "chip on" : "chip"} onClick={() => setView("people")}>People</button>
+        <button className={view === "watch" ? "chip on" : "chip"} onClick={() => (setView("watch"), setSelected(null))}>Watch list{watch.list?.length ? ` (${watch.list.length})` : ""}</button>
+      </div>
+      {view === "watch" ? (
+        <WatchListEditor />
+      ) : !selected ? (
         <>
           <input autoFocus placeholder="Search name or card number…" value={q} onChange={(e) => setQ(e.target.value)} />
           {!people && <p className="muted small">Loading…</p>}
@@ -73,6 +84,7 @@ export function PeoplePanel({ idx, onClose, onShowPath, onFollow }: { idx: SiteI
               <li key={p.cardId} onClick={() => setSelected(p)}>
                 <div className="grow">
                   <strong>{label(p)}</strong> <span className="muted small">card {p.cardId}</span>
+                  {watched(p.cardId) && <span className="watch-chip">WATCH LIST</span>}
                   <div className="muted small">Last: {p.lastDoor ?? "unknown door"} · {ago(p.lastAt, now)}</div>
                 </div>
                 <span className="muted small">{p.todayCount} today{p.denied ? ` · ${p.denied} denied` : ""}</span>
@@ -111,6 +123,25 @@ export function PeoplePanel({ idx, onClose, onShowPath, onFollow }: { idx: SiteI
             </button>
           </div>
           <p className="muted small">Tracking follows every new swipe of this card automatically, alongside cameras.</p>
+          {watched(selected.cardId) ? (
+            <p className="watch-note">
+              <span className="watch-chip">WATCH LIST</span> {watch.list!.find((w) => w.cardId === selected.cardId)!.reason}{" "}
+              <button className="btn-ghost small-btn" disabled={watch.busy} onClick={() => watch.save(watch.list!.filter((w) => w.cardId !== selected.cardId))}>Remove</button>
+            </p>
+          ) : (
+            <div className="btn-row">
+              <input placeholder="Reason to watch this card…" value={watchReason} onChange={(e) => setWatchReason(e.target.value)} />
+              <button
+                disabled={watch.busy || !watchReason.trim() || !watch.list}
+                onClick={() => {
+                  watch.save([...watch.list!, { cardId: selected.cardId, name: selected.name, reason: watchReason.trim(), addedBy: "", addedAt: "" }]);
+                  setWatchReason("");
+                }}
+              >
+                Add to watch list
+              </button>
+            </div>
+          )}
           {error && <p className="error">{error}</p>}
           {!history && <p className="muted small">Loading…</p>}
           {history?.length === 0 && <p className="muted">No swipes on this day.</p>}

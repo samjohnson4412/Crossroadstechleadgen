@@ -6,6 +6,7 @@ import { createSimulatedIntegration, simWorldFor } from "../integrations/simulat
 import type { Actor, DisplayMessage, DoorStatus, Integration, IntegrationDriver, IntegrationHealth, StreamInfo } from "../integrations/types.ts";
 import { Tracker } from "../tracking/tracker.ts";
 import type { Alert, AlertChannel, AlertDelivery, AlertSpec } from "./alerts.ts";
+import type { WatchEntry, WatchHit } from "./watchlist.ts";
 import { normalizePhone, type Contact, type NotifyTopic } from "./contacts.ts";
 import { DEFAULT_RULES, evaluateRules, topSeverity, type Detection, type DetectionRule } from "./detections.ts";
 import { appendLine, dataDir, pruneFolder, readJson, readJsonLines, siteFile, writeJsonSoon } from "./files.ts";
@@ -64,6 +65,8 @@ export class Runtime {
   readonly detections: Detection[] = readJson<Detection[]>(siteFile("detections"), []);
   rules: DetectionRule[] = readJson<DetectionRule[]>(siteFile("rules"), DEFAULT_RULES);
   contacts: Contact[] = readJson<Contact[]>(siteFile("contacts"), []);
+  watchlist: WatchEntry[] = readJson<WatchEntry[]>(siteFile("watchlist"), []);
+  readonly watchHits: WatchHit[] = [];
   private recentTexts = new Map<string, number>();
   /** Badge swipes (granted and denied) — kept on disk so "where has this person been" survives restarts. */
   readonly badges: BadgeEvent[] = readJsonLines<BadgeEvent>(siteFile("badges", "jsonl"), MAX_BADGES);
@@ -171,6 +174,7 @@ export class Runtime {
     this.audit.push(...old.audit);
     this.lockdown = old.lockdown;
     this.alerts.push(...old.alerts);
+    this.watchHits.push(...old.watchHits);
     this.detections.splice(0, this.detections.length, ...old.detections);
     this.badges.splice(0, this.badges.length, ...old.badges);
     this.rules = old.rules;
@@ -240,6 +244,7 @@ export class Runtime {
       lockdown: this.lockdown,
       alerts: this.alerts.slice(-20),
       detections: this.detections.slice(-100),
+      watchHits: this.watchHits.slice(-20),
       sim: this.simulating ? simWorldFor(this.graph).view() : null,
       authConfigured,
     };
@@ -439,8 +444,64 @@ export class Runtime {
       action: raw.summary,
     };
     this.badges.push(b);
+    this.checkWatchlist(b);
     if (this.badges.length > MAX_BADGES) this.badges.splice(0, this.badges.length - MAX_BADGES);
     appendLine(siteFile("badges", "jsonl"), b).catch(() => {});
+  }
+
+  // ---------- watch list ----------
+
+  private checkWatchlist(b: BadgeEvent) {
+    const entry = this.watchlist.find((w) => w.cardId === b.cardId);
+    if (!entry) return;
+    const hit: WatchHit = {
+      id: newId("wh"),
+      at: b.at,
+      cardId: b.cardId,
+      name: b.name ?? entry.name,
+      reason: entry.reason,
+      doorId: b.doorId,
+      doorName: b.doorName,
+      zoneId: b.zoneId,
+      granted: b.granted,
+    };
+    this.watchHits.push(hit);
+    if (this.watchHits.length > 50) this.watchHits.shift();
+    this.broadcast({ type: "watchhit", hit });
+    const who = `${hit.name ?? "Card"} (card ${hit.cardId})`;
+    const where = hit.doorName ?? "unknown door";
+    this.pushEvent({
+      id: newId("evt"),
+      type: "alert.raised",
+      at: hit.at,
+      severity: "critical",
+      integration: "watchlist",
+      doorId: hit.doorId,
+      zoneId: hit.zoneId,
+      summary: `WATCH LIST: ${who} at ${where} — ${hit.granted ? "access granted" : "access denied"} · ${entry.reason}`,
+    });
+    this.notify("watchlist", `WATCH LIST: ${who} badged at ${where} (${hit.granted ? "granted" : "denied"}). Reason: ${entry.reason}`, hit.id);
+  }
+
+  async setWatchlist(entries: WatchEntry[], actor: Actor) {
+    const clean = entries.map((e) => {
+      if (!e.cardId?.trim()) throw new Error("Each entry needs a card number");
+      if (!e.reason?.trim()) throw new Error(`Card ${e.cardId}: give a reason`);
+      return { cardId: e.cardId.trim(), name: e.name?.trim() || undefined, reason: e.reason.trim(), addedBy: e.addedBy || actor.name, addedAt: e.addedAt || new Date().toISOString() };
+    });
+    await this.audited(actor, "watchlist.save", `${clean.length} card(s)`, async () => {
+      this.watchlist = clean;
+      writeJsonSoon(siteFile("watchlist"), () => this.watchlist);
+    });
+    return this.watchlist;
+  }
+
+  acknowledgeWatchHit(id: string, actor: Actor) {
+    const hit = this.watchHits.find((h) => h.id === id);
+    if (!hit) throw new Error("Not found");
+    hit.acknowledgedBy = actor.name;
+    this.broadcast({ type: "watchhit", hit });
+    return hit;
   }
 
   /** People who badged, most recent first; `q` matches name or card number. */

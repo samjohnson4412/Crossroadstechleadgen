@@ -28,6 +28,10 @@ function apply(state: LiveState, msg: LiveMessage): LiveState {
       const others = state.detections.filter((d) => d.id !== msg.detection.id);
       return { ...state, detections: [...others, msg.detection].sort((a, b) => a.at.localeCompare(b.at)).slice(-100) };
     }
+    case "watchhit": {
+      const others = state.watchHits.filter((h) => h.id !== msg.hit.id);
+      return { ...state, watchHits: [...others, msg.hit].sort((a, b) => a.at.localeCompare(b.at)).slice(-20) };
+    }
     case "sim":
       return { ...state, sim: msg.actors };
     case "site":
