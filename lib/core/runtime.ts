@@ -165,7 +165,9 @@ export class Runtime {
     clearInterval(this.simTimer);
     clearInterval(this.cameraRefresh);
     simWorldFor(this.graph).stop();
-    for (const r of this.integrations.values()) await r.instance.stop().catch(() => {});
+    // One stuck connection must never block saving settings or the map.
+    for (const r of this.integrations.values())
+      await Promise.race([r.instance.stop().catch(() => {}), new Promise((resolve) => setTimeout(resolve, 5000))]);
     this.broadcast({ type: "site" });
     this.listeners.clear();
   }

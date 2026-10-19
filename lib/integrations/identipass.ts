@@ -1,4 +1,4 @@
-import { createServer, type Server } from "node:net";
+import { createServer, type Server, type Socket } from "node:net";
 import type { EventType, RawEvent, Severity } from "../core/events.ts";
 import type { IntegrationDriver } from "./types.ts";
 
@@ -156,9 +156,12 @@ export const identipassDriver: IntegrationDriver = {
       return n;
     }
 
+    const sockets = new Set<Socket>();
     return {
       async start() {
         server = createServer((socket) => {
+          sockets.add(socket);
+          socket.on("close", () => sockets.delete(socket));
           let buffer = "";
           socket.setEncoding("latin1");
           socket.on("data", (chunk: string) => {
@@ -184,6 +187,10 @@ export const identipassDriver: IntegrationDriver = {
         });
       },
       async stop() {
+        // The printer feed keeps its connection open forever; drop it so the port frees now
+        // (the XP PC's spooler reconnects to the new listener by itself).
+        for (const s of sockets) s.destroy();
+        sockets.clear();
         await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
       },
       async handleWebhook(request) {
