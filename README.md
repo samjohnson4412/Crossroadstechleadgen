@@ -63,9 +63,12 @@ npm test               # graph + tracker unit tests
 Production (on a machine on the campus network, so it can reach Blue Iris / UniFi):
 
 ```bash
-cp .env.example .env.local   # fill in credentials + CONSOLE_USERS
-npm run build && npm start
+cp .env.example .env.local   # fill in credentials + CONSOLE_USERS (e.g. CONSOLE_USERS=sam:a-long-password)
+npm run build && npm start   # http://localhost:3100 — asks for one of the CONSOLE_USERS logins
 ```
+
+`npm start` refuses to run without `CONSOLE_USERS`; `npm run dev` runs without a login.
+After every `git pull`, run `npm run build` again before `npm start`.
 
 ## Hooking up CCC for real
 
