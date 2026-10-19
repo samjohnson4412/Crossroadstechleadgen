@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { closestOnSegment, distanceToOutline, pointInPolygon, polygonsTouch } from "@/lib/core/geometry";
 import type { SiteLayout } from "@/lib/core/overrides";
-import { bounds, centroid, DOOR_LOCK_LABELS, type CameraPlacement, type DoorLockType, type DoorPlacement, type Floor, type Point, type Zone, type ZoneKind } from "@/lib/core/site";
+import { placeSuggestedCameras } from "@/lib/core/cameraHints";
+import { bounds, centroid, DOOR_LOCK_LABELS, type CameraHint, type CameraPlacement, type DoorLockType, type DoorPlacement, type Floor, type Point, type Zone, type ZoneKind } from "@/lib/core/site";
 import { applyPlan, placer, removeBuilding, startPlacement, turnedSize, type Placement } from "@/lib/floorplan/importPlan";
 import { ImportPlanDialog, type PlanChoice } from "./ImportPlan";
 import { drawnBuildings, lockColor, markerScale, PlanDrawings, zoneLabel, ZoneLabelText } from "./MapView";
@@ -43,6 +44,8 @@ interface Props {
   cameraIntegrations: { id: string; name: string }[];
   doorIntegration?: string;
   displayIntegration?: string;
+  /** Suggested rooms for cameras (site config), for "Place suggested cameras". */
+  cameraHints?: Record<string, CameraHint>;
   onDone: () => void;
 }
 
@@ -50,7 +53,7 @@ interface Props {
  * Map editor: draw and reshape rooms, place cameras and doors, set which rooms
  * connect. Works on a draft; nothing changes for other consoles until Save.
  */
-export function MapEditor({ initial, floorId, showBackground, cameraIntegrations, doorIntegration, displayIntegration, onDone }: Props) {
+export function MapEditor({ initial, floorId, showBackground, cameraIntegrations, doorIntegration, displayIntegration, cameraHints, onDone }: Props) {
   const cameraIntegration = cameraIntegrations[0]?.id;
   const serverName = (id: string) => cameraIntegrations.find((c) => c.id === id)?.name ?? id;
   const [draft, setDraft] = useState<SiteLayout>(() => structuredClone(initial));
@@ -398,6 +401,22 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
 
   const placedIds = new Set(floors.flatMap((f) => f.cameras.map((c) => `${c.source.integration}/${c.source.externalId}`)));
   const unplaced = biCameras.filter((c) => !placedIds.has(`${c.integration}/${c.externalId}`));
+  // Only count cameras whose suggested room is actually on the map.
+  const suggestable = useMemo(
+    () => (cameraHints ? placeSuggestedCameras(draft, unplaced, cameraHints).placed : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [draft, biCameras, cameraHints],
+  );
+  function placeSuggested() {
+    const { layout, placed, noRoom } = placeSuggestedCameras(draftRef.current, unplaced, cameraHints ?? {});
+    setHistory((h) => [...h.slice(-49), draftRef.current]);
+    setDraft(layout);
+    const sure = placed.filter((p) => p.sure).length;
+    setHint(
+      `Placed ${placed.length} cameras: ${sure} where the name says the room, ${placed.length - sure} best guesses. Drag each dashed camera to its exact spot, then Save map.` +
+        (noRoom.length ? ` ${noRoom.length} couldn't be placed (their room isn't on the map): ${noRoom.join(", ")}.` : ""),
+    );
+  }
   const placedBoards = new Set([...floors.flatMap((f) => f.displays), ...(draft.parked?.displays ?? [])].map((d) => d.source.externalId));
   const unplacedBoards = boards.filter((b) => !placedBoards.has(b.externalId));
   const selZone = sel?.kind === "zone" ? floor.zones.find((z) => z.id === sel.id) : undefined;
@@ -667,6 +686,14 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
               >
                 Remove all cameras on this level
               </button>
+            )}
+            {suggestable.length > 0 && (
+              <>
+                <button className="btn-primary small-btn" style={{ marginTop: 12 }} onClick={placeSuggested}>
+                  📍 Place {suggestable.length} suggested camera{suggestable.length === 1 ? "" : "s"}
+                </button>
+                <p className="muted small">Puts cameras in the room their name points to, on every level (dashed until you drag them to the exact spot). Undo works until you save.</p>
+              </>
             )}
             {unplaced.length > 0 && (
               <>

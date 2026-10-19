@@ -148,6 +148,13 @@ export interface ParkedDevices {
   displays: DisplayPlacement[];
 }
 
+/** Where a camera probably is: room ids or names to try in order. */
+export interface CameraHint {
+  rooms: string[];
+  /** The camera's name says the room; otherwise an educated guess. */
+  sure: boolean;
+}
+
 export interface SiteConfig {
   id: string;
   name: string;
@@ -155,6 +162,8 @@ export interface SiteConfig {
   passages: Passage[];
   parked?: ParkedDevices;
   integrations: IntegrationConfig[];
+  /** Suggested rooms for cameras by their vendor id, for "Place suggested cameras" in the map editor. */
+  cameraHints?: Record<string, CameraHint>;
 }
 
 /** What the browser receives: the layout without integration settings. */

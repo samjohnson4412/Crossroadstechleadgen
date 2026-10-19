@@ -159,6 +159,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
             cameraIntegrations={state.integrations.filter((i) => i.capabilities.includes("cameras") && i.health.state !== "unconfigured").map((i) => ({ id: i.id, name: i.name }))}
             doorIntegration={state.integrations.find((i) => i.capabilities.includes("access-control"))?.id}
             displayIntegration={state.integrations.find((i) => i.capabilities.includes("messaging"))?.id}
+            cameraHints={site.cameraHints}
             onDone={() => setEditing(false)}
           />
         </main>

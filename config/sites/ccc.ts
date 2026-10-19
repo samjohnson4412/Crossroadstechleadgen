@@ -1,3 +1,4 @@
+import { cccCameraHints } from "./ccc-cameras.ts";
 import { poly, rect, type CameraPlacement, type DoorPlacement, type SiteConfig } from "../../lib/core/site.ts";
 
 /**
@@ -58,6 +59,7 @@ const SAN = "Sanctuary";
 export const cccSite: SiteConfig = {
   id: "ccc",
   name: "CCC Campus",
+  cameraHints: cccCameraHints,
   integrations: [
     {
       id: "cameras",

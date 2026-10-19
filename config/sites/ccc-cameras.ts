@@ -1,0 +1,137 @@
+import type { CameraHint } from "../../lib/core/site.ts";
+
+/**
+ * Best guesses for where CCC's Blue Iris cameras are, from their names. Used by
+ * Edit map → "Place suggested cameras": each camera not on the map yet goes into
+ * the first of its rooms that exists (room id or name), dashed until confirmed.
+ *
+ * sure = the name says the room; otherwise it's an educated guess.
+ * Cameras not listed (unknown locations, e.g. AZ/DZ, chapel, security rooms) stay
+ * in the "not on the map yet" list for placing by hand.
+ */
+const sure = (...rooms: string[]): CameraHint => ({ rooms, sure: true });
+const guess = (...rooms: string[]): CameraHint => ({ rooms, sure: false });
+
+export const cccCameraHints: Record<string, CameraHint> = {
+  // ---- Education Building, level 1 ----
+  CCAOffice: sure("CCA Office"),
+  EB1_Academy_Door: guess("Breezeway", "e-connector"),
+  EB1_Acct_Halls: sure("Accounting Hallway"),
+  EB1_Count_Closet: guess("Accounting"),
+  EB1_Count_Table: guess("Accounting"),
+  EB1_Count_End: guess("Accounting"),
+  EB1_Count_Wall: guess("Accounting"),
+  EB1_FacilitiesOf: sure("Facilities"),
+  EB1FacilOffice: sure("Facilities"),
+  EB1Playground_62: sure("o-playground", "Playground"),
+  EB1PlayDoors: sure("o-playground", "Playground"),
+  Playscape: guess("o-playground", "Playground"),
+  "PreschoolLib!77": guess("E099 Library", "Library"),
+  WCCCAOfficeDrive: guess("o-drive"),
+
+  // ---- Education Building, level 2 ----
+  E203: sure("e2-203", "E203"),
+  EB2_HSHall: guess("e2-south-hall", "e2-bridge"),
+  EB2_Kitchen_Hall: guess("e2-west-hall", "e2-kitchen"),
+  EB2_Upper_SW: guess("e2-west-hall"),
+  EB2_Restrooms: sure("e2-restrooms"),
+
+  // ---- Y Building ----
+  "YC-Gym": sure("y-gym"),
+  YC_Gym: sure("y-gym"),
+  YCGymC: sure("y-gym"),
+  YC_Gym_East: sure("y-gym"),
+  YC_Gym_West: sure("y-gym"),
+  YCGymNWCorner: sure("y-gym"),
+  YC_Gym_Backstage: guess("y-gym"),
+  YCGymSoundBooth: guess("y-gym"),
+  YC_Gym_Lobby: guess("y-lobby"),
+  YC_Lobby: sure("y-lobby"),
+  YCLTV: sure("y-lobby"),
+  YC_Entry: guess("y-lobby"),
+  YC_Entryway: guess("y-lobby"),
+  YC_Break_Room: guess("y-offices"),
+  YCCubicles2: guess("y-offices"),
+  YC_Reception: guess("y-offices"),
+  YCOutsideEast: guess("o-north-parking"),
+  YC_NLOutside: guess("o-north-parking"),
+
+  // ---- Worship Center (Sanctuary), level 1 ----
+  WCNorthLobby: sure("s-north-lobby"),
+  WC_North_East: sure("s-north-lobby"),
+  WC_North_Merch: sure("s-north-lobby"),
+  WC1_NL_Center: sure("s-north-lobby"),
+  WC1_NL_NE: sure("s-north-lobby"),
+  WC1_NL_NW: sure("s-north-lobby"),
+  WC1_Merch_Hall: sure("s-north-lobby"),
+  WC1_NL_NewMemHal: guess("s-north-lobby"),
+  WC1_NL_Lockbox: guess("s-north-lobby"),
+  "WC-Cafe": sure("s-cafe"),
+  WC1_Cafe: sure("s-cafe"),
+  WCCafe_Registers: sure("s-cafe"),
+  "WC-Cafe-Kitchen": sure("s-cafe"),
+  "WC-Cafe-Back-Kit": sure("s-cafe"),
+  "WC-Cafe-Overflow": sure("s-cafe"),
+  WC1_CafeOverflow: sure("s-cafe"),
+  WCCafe_Freezers: sure("s-cafe"),
+  WCCafe_Rack: sure("s-cafe"),
+  WC1_Cafe_Safe: sure("s-cafe"),
+  CafeHall151: guess("s-cafe"),
+  "WC-Cafe-Hallway": guess("s-cafe"),
+  WCCafEHall2: guess("s-cafe"),
+  WCCafeHallway: guess("s-cafe"),
+  WC1_Cafe_Hall: guess("s-cafe"),
+  CafeEntHall176: guess("s-cafe"),
+  WC1_West_Lobby: sure("s-west"),
+  WC1_WestLobby: sure("s-west"),
+  WCWestLToCafe: sure("s-west"),
+  WC1WestClean: guess("s-west"),
+  WC1_WestLobby_NW_Out: guess("o-drive"),
+  WC1WestLobbyOut: guess("o-drive"),
+  WC1_East_Lobby: sure("s-east"),
+  WC1_SL_CENTER: sure("s-south-lobby"),
+  WC1_SL_Ceiling: sure("s-south-lobby"),
+  SLTVs: sure("s-south-lobby"),
+  WC1_South_Entry: guess("o-south-entrance"),
+  PreEntry: guess("o-south-entrance"),
+  WC1SouthDrive: guess("o-south-entrance"),
+  Sanctuary: sure("s-sanctuary"),
+  WC_Sanct_PTZ_163: sure("s-sanctuary"),
+  WC_Sanct_PTZ_167: sure("s-sanctuary"),
+  Rear_Stage_L1: sure("s-stage"),
+  Rear_Stage_L2: sure("s-stage"),
+  Rear_Stage_L3: sure("s-stage"),
+  GR111: guess("s-stage"),
+  GR166: guess("s-stage"),
+  WCGreenRoom: guess("s-stage"),
+  // S1xx classrooms: lower numbers guessed in the southwest wing, higher in the southeast.
+  S129: guess("s-sw"),
+  S132: guess("s-sw"),
+  S135: guess("s-sw"),
+  S137: guess("s-sw"),
+  S139: guess("s-sw"),
+  S141: guess("s-sw"),
+  S143: guess("s-sw"),
+  S145: guess("s-sw"),
+  S147: guess("s-sw"),
+  S173: guess("s-se"),
+  S175: guess("s-se"),
+  S177: guess("s-se"),
+  S179: guess("s-se"),
+  S181: guess("s-se"),
+  S183: guess("s-se"),
+
+  // ---- Worship Center, level 2 ----
+  WC2_SanctCeiling: sure("s-sanctuary"),
+  WC2_Mezzanine_13: guess("s2-balcony"),
+  WC2_S232: sure("s2-east-rooms"),
+  WC2_S232_Hall_37: sure("s2-east-rooms"),
+  WC2_S238_Hall_34: sure("s2-238"),
+  WC2_Up_East_Lob: sure("s2-east"),
+  SC2_UP_Ea_Lb: sure("s2-east"),
+  WC2UpperSLobby: sure("s2-south-hall"),
+  WC2_Upper_West_H: sure("s2-west"),
+  WC2_Upper_West_L: sure("s2-west"),
+  WC2_UprWestLobby: sure("s2-west"),
+  WC2_West_LobbyE: guess("s2-west"),
+};
