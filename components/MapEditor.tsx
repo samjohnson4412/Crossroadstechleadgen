@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { closestOnSegment, distanceToOutline, pointInPolygon, polygonsTouch } from "@/lib/core/geometry";
 import type { SiteLayout } from "@/lib/core/overrides";
 import { placeSuggestedCameras } from "@/lib/core/cameraHints";
-import { bounds, centroid, DOOR_LOCK_LABELS, type CameraHint, type CameraPlacement, type DoorLockType, type DoorPlacement, type Floor, type Point, type Zone, type ZoneKind } from "@/lib/core/site";
+import { bounds, centroid, DOOR_LOCK_LABELS, type CameraHint, type CameraPlacement, type DisplayPlacement, type DoorLockType, type DoorPlacement, type Floor, type Point, type Zone, type ZoneKind } from "@/lib/core/site";
 import { applyPlan, placer, removeBuilding, startPlacement, turnedSize, type Placement } from "@/lib/floorplan/importPlan";
 import { ImportPlanDialog, type PlanChoice } from "./ImportPlan";
 import { drawnBuildings, lockColor, markerScale, PlanDrawings, zoneLabel, ZoneLabelText } from "./MapView";
@@ -157,17 +157,28 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
     if (!sel) return;
     commit((d) => {
       const f = floorOf(d);
+      // Badge doors and SMART Boards keep their link to the real device: set them aside to place again.
+      const parked = (d.parked ??= { doors: [], displays: [] });
+      const parkDoor = (x: DoorPlacement) => x.source && parked.doors.push(x);
+      const parkBoard = (x: DisplayPlacement) => parked.displays.push(x);
       if (sel.kind === "zone") {
         f.zones = f.zones.filter((z) => z.id !== sel.id);
         d.passages = d.passages.filter((p) => !p.between.includes(sel.id));
         for (const fl of d.buildings.flatMap((b) => b.floors)) {
+          fl.doors.filter((x) => x.between.includes(sel.id)).forEach(parkDoor);
           fl.doors = fl.doors.filter((x) => !x.between.includes(sel.id));
           for (const c of fl.cameras) c.covers = c.covers.filter((z) => z !== sel.id);
+          fl.displays.filter((x) => x.zoneId === sel.id).forEach(parkBoard);
           fl.displays = fl.displays.filter((x) => x.zoneId !== sel.id);
         }
-      } else if (sel.kind === "camera") f.cameras = f.cameras.filter((c) => c.id !== sel.id);
-      else if (sel.kind === "display") f.displays = f.displays.filter((x) => x.id !== sel.id);
-      else f.doors = f.doors.filter((x) => x.id !== sel.id);
+      } else if (sel.kind === "camera") f.cameras = f.cameras.filter((c) => c.id !== sel.id); // real cameras reappear in "not on the map yet"
+      else if (sel.kind === "display") {
+        f.displays.filter((x) => x.id === sel.id).forEach(parkBoard);
+        f.displays = f.displays.filter((x) => x.id !== sel.id);
+      } else {
+        f.doors.filter((x) => x.id === sel.id).forEach(parkDoor);
+        f.doors = f.doors.filter((x) => x.id !== sel.id);
+      }
     });
     setSel(null);
   }
