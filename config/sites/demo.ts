@@ -55,7 +55,7 @@ export const demoSite: SiteConfig = {
       id: "displays",
       driver: "smart-displays",
       name: "SMART Boards",
-      settings: { sendUrl: { env: "SMART_SEND_URL" }, token: { env: "SMART_TOKEN" } },
+      settings: { apiKey: { env: "SMART_API_KEY" }, url: { env: "SMART_URL", default: "https://smart.glbth.com" } },
     },
   ],
   passages: [

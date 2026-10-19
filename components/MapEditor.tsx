@@ -66,6 +66,9 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
   /** A parked badge door / SMART Board picked from "not on the map", waiting to be clicked onto the map. */
   const [pendingParked, setPendingParked] = useState<{ kind: "door" | "display"; id: string } | null>(null);
   const [uniDoors, setUniDoors] = useState<{ externalId: string; name: string }[]>([]);
+  const [boards, setBoards] = useState<{ externalId: string; name: string; online?: boolean }[]>([]);
+  /** A SMART Board picked from "not on the map", waiting to be clicked onto the map. */
+  const [pendingBoard, setPendingBoard] = useState<{ externalId: string; name: string } | null>(null);
   const dragRef = useRef<Drag | null>(null);
   /** The click that ends a draw/drag/placement must not also clear the selection. */
   const ignoreClick = useRef(false);
@@ -92,8 +95,9 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
       ),
     ).then((lists) => setBiCameras(lists.flat()));
     if (doorIntegration) fetch(`/api/integrations/${doorIntegration}/devices`).then((r) => r.json()).then((d) => setUniDoors(d.doors ?? [])).catch(() => {});
+    if (displayIntegration) fetch(`/api/integrations/${displayIntegration}/devices`).then((r) => r.json()).then((d) => setBoards(d.displays ?? [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraIntegrations.map((c) => c.id).join(","), doorIntegration]);
+  }, [cameraIntegrations.map((c) => c.id).join(","), doorIntegration, displayIntegration]);
 
   // ---------- draft helpers ----------
 
@@ -229,9 +233,17 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
         return;
       }
       const id = rid("board");
+      const picked = pendingBoard;
       commit((d) =>
-        floorOf(d).displays.push({ id, name: `${z.name} board`, position: { x: Math.round(p.x), y: Math.round(p.y) }, zoneId: z.id, source: { integration: displayIntegration ?? "displays", externalId: id } }),
+        floorOf(d).displays.push({
+          id,
+          name: picked?.name ?? `${z.name} board`,
+          position: { x: Math.round(p.x), y: Math.round(p.y) },
+          zoneId: z.id,
+          source: { integration: displayIntegration ?? "displays", externalId: picked?.externalId ?? id },
+        }),
       );
+      setPendingBoard(null);
       setSel({ kind: "display", id });
       setTool("select");
     } else if (tool === "door") {
@@ -386,6 +398,8 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
 
   const placedIds = new Set(floors.flatMap((f) => f.cameras.map((c) => `${c.source.integration}/${c.source.externalId}`)));
   const unplaced = biCameras.filter((c) => !placedIds.has(`${c.integration}/${c.externalId}`));
+  const placedBoards = new Set([...floors.flatMap((f) => f.displays), ...(draft.parked?.displays ?? [])].map((d) => d.source.externalId));
+  const unplacedBoards = boards.filter((b) => !placedBoards.has(b.externalId));
   const selZone = sel?.kind === "zone" ? floor.zones.find((z) => z.id === sel.id) : undefined;
   const selCam = sel?.kind === "camera" ? floor.cameras.find((c) => c.id === sel.id) : undefined;
   const selDoor = sel?.kind === "door" ? floor.doors.find((d) => d.id === sel.id) : undefined;
@@ -433,7 +447,7 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
         ) : (
         <div className="editor-bar">
           {TOOLS.map((t) => (
-            <button key={t.id} className={tool === t.id ? "on" : ""} onClick={() => (setTool(t.id), setShapePoints([]), setHint(null), setPendingCam(null), setPendingParked(null))}>
+            <button key={t.id} className={tool === t.id ? "on" : ""} onClick={() => (setTool(t.id), setShapePoints([]), setHint(null), setPendingCam(null), setPendingParked(null), setPendingBoard(null))}>
               {t.label}
             </button>
           ))}
@@ -674,6 +688,21 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
                 </ul>
               </>
             )}
+            {unplacedBoards.length > 0 && (
+              <>
+                <div className="section-title">SMART Boards not on the map yet <span className="count">{unplacedBoards.length}</span></div>
+                <p className="muted small">Click one, then click inside the room it&apos;s in.</p>
+                <ul className="unplaced">
+                  {unplacedBoards.map((b) => (
+                    <li key={b.externalId}>
+                      <button className={pendingBoard?.externalId === b.externalId ? "on" : ""} onClick={() => (setPendingBoard(b), setPendingParked(null), setTool("display"), setHint(`Click inside the room where "${b.name}" is.`))}>
+                        ▭ {b.name}{b.online === false && <span className="muted small"> · offline</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </div>
         )}
 
@@ -763,8 +792,9 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
                 {floor.zones.map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
               </select>
             </label>
-            <label>SMART device ID (from SMART Remote Management)
+            <label>Board in SMART Remote Management
               <input
+                list="smart-boards"
                 value={selDisplay.source.externalId === selDisplay.id ? "" : selDisplay.source.externalId}
                 placeholder="Not linked yet"
                 onChange={(e) => commit((d) => {
@@ -772,6 +802,8 @@ export function MapEditor({ initial, floorId, showBackground, cameraIntegrations
                   x.source = { integration: x.source.integration, externalId: e.target.value.trim() || x.id };
                 }, false)}
               />
+              <datalist id="smart-boards">{boards.map((b) => <option key={b.externalId} value={b.externalId}>{b.name}</option>)}</datalist>
+              {boards.find((b) => b.externalId === selDisplay.source.externalId) && <span className="muted small">{boards.find((b) => b.externalId === selDisplay.source.externalId)!.name}</span>}
             </label>
             <div className="btn-row end"><button className="btn-danger" onClick={deleteSelected}>Delete board</button></div>
           </div>

@@ -34,8 +34,8 @@ export const DRIVER_FIELDS: Record<string, Record<string, FieldInfo>> = {
     outboundToken: { label: "Outbound token", type: "password" },
   },
   "smart-displays": {
-    sendUrl: { label: "Send URL", placeholder: "https://…", help: "SMART Remote Management endpoint (or relay) that shows messages on boards." },
-    token: { label: "API token", type: "password" },
+    apiKey: { label: "API key", type: "password", help: "SMART Remote Management → Settings → API keys → create one (shown only once)." },
+    url: { label: "Server", placeholder: "https://smart.glbth.com", help: "Leave as is unless SMART gave you a different address." },
   },
   twilio: {
     accountSid: { label: "Account SID", placeholder: "AC…", help: "Twilio console → Account info." },

@@ -92,6 +92,8 @@ export interface MessagingCapability {
   /** Send to specific displays (vendor ids) or all displays when `externalIds` is empty. */
   send(message: DisplayMessage, externalIds: string[], actor: Actor): Promise<void>;
   clear?(externalIds: string[], actor: Actor): Promise<void>;
+  /** Boards the vendor system knows about, for placing them on the map. */
+  listDisplays?(): Promise<{ externalId: string; name: string; online?: boolean }[]>;
 }
 
 // ---------- paging (IP speakers, horns, phone paging adapters) ----------

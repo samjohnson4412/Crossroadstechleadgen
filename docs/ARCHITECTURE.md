@@ -39,7 +39,7 @@ Moving CCC from Blue Iris to UniFi Protect cameras = write a `unifi-protect` dri
 | `blueiris` | JSON API login/camlist, MJPEG + snapshot proxy (credentials stay server-side), AI alert webhook. Needs testing against CCC's server. |
 | `unifi-access` | Developer API: door list/state polling, unlock, keep-locked/keep-unlocked/reset, emergency lockdown, webhook events. Needs testing against CCC's controller version. |
 | `saferwatch` | Inbound webhook (shared secret) → critical alerts; optional outbound POST. **Real API mapping pending SaferWatch partner docs.** |
-| `smart-displays` | POSTs messages to a configurable endpoint. **Pending how CCC's SMART Boards are managed** (SMART Remote Management or a relay). |
+| `smart-displays` | SMART Remote Management (smart.glbth.com) API: `X-API-Key` header, lists boards, sends pop-up messages to chosen boards. Needs testing against CCC's account. |
 | `simulator` | Stands in for any of the above. |
 
 ## Floor plans

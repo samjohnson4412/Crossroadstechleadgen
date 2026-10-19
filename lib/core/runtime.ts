@@ -1127,6 +1127,7 @@ export class Runtime {
     return {
       cameras: r.instance.cameras ? await r.instance.cameras.listCameras() : undefined,
       doors: r.instance.access ? await r.instance.access.listDoors() : undefined,
+      displays: r.instance.messaging?.listDisplays ? await r.instance.messaging.listDisplays() : undefined,
     };
   }
 }
