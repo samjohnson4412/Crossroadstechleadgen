@@ -26,13 +26,16 @@ interface Props {
    * stream holds one, so only the main tile on screen is live; the rest refresh as snapshots.
    */
   live?: boolean;
+  /** How often snapshot tiles refresh (ms). Bigger walls refresh slower to spare the camera server. */
+  refreshMs?: number;
   onClick?: () => void;
+  onDoubleClick?: () => void;
 }
 
 /** One live camera tile: real MJPEG via the server proxy, or the simulator's rendering. */
-export function CameraFeed({ camera, stream, zones, sim, badge, footer, emphasis, live, onClick }: Props) {
+export function CameraFeed({ camera, stream, zones, sim, badge, footer, emphasis, live, refreshMs, onClick, onDoubleClick }: Props) {
   return (
-    <div className={`feed${emphasis ? " feed-emphasis" : ""}`} onClick={onClick}>
+    <div className={`feed${emphasis ? " feed-emphasis" : ""}`} onClick={onClick} onDoubleClick={onDoubleClick}>
       <div className="feed-video">
         {!stream || stream.kind === "unavailable" ? (
           <div className="feed-empty">{stream?.kind === "unavailable" ? stream.reason : "No stream"}</div>
@@ -42,7 +45,7 @@ export function CameraFeed({ camera, stream, zones, sim, badge, footer, emphasis
           live ? (
             <LiveImage streamUrl={stream.url} snapshotUrl={`/api/cameras/${camera.id}/snapshot`} alt={camera.name} />
           ) : (
-            <SnapshotImage url={`/api/cameras/${camera.id}/snapshot?w=480`} alt={camera.name} />
+            <SnapshotImage url={`/api/cameras/${camera.id}/snapshot?w=480`} alt={camera.name} intervalMs={refreshMs} />
           )
         ) : (
           <div className="feed-empty">{stream.kind.toUpperCase()} playback not wired yet</div>
@@ -160,7 +163,7 @@ function SimFeed({ camera, zones, actors }: { camera: CameraPlacement; zones: Ma
 /**
  * Live MJPEG; if the camera server refuses the stream, fall back to refreshing snapshots.
  */
-function LiveImage({ streamUrl, snapshotUrl, alt }: { streamUrl: string; snapshotUrl: string; alt: string }) {
+export function LiveImage({ streamUrl, snapshotUrl, alt }: { streamUrl: string; snapshotUrl: string; alt: string }) {
   const [failed, setFailed] = useState(false);
   if (failed) return <SnapshotImage url={snapshotUrl} alt={alt} intervalMs={500} />;
   // eslint-disable-next-line @next/next/no-img-element
@@ -171,7 +174,7 @@ function LiveImage({ streamUrl, snapshotUrl, alt }: { streamUrl: string; snapsho
  * Refreshing still image. Loads the next frame only after the current one arrives (never piles up
  * requests on a slow camera), and swaps frames only once loaded so the tile never flashes blank.
  */
-function SnapshotImage({ url, alt, intervalMs = 1200 }: { url: string; alt: string; intervalMs?: number }) {
+export function SnapshotImage({ url, alt, intervalMs = 1200 }: { url: string; alt: string; intervalMs?: number }) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState(false);
   useEffect(() => {

@@ -429,3 +429,38 @@ button.on-muted { color: var(--muted); }
 .placing-bar { align-items: center; }
 label.inline-num { flex-direction: row; align-items: center; gap: 4px; margin: 0; font-size: 13px; }
 .inline-num input { width: 64px; }
+
+/* Camera wall */
+.view-switch { margin-left: 4px; }
+.main-wall { grid-template-columns: 1fr; }
+.main-split { grid-template-columns: minmax(0, 1fr) minmax(420px, 48%); }
+.side-wall { padding: 10px; display: flex; flex-direction: column; }
+.wall { display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1; }
+.wall:fullscreen { background: var(--bg); padding: 12px; }
+.wall-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wall-bar select { width: auto; max-width: 260px; }
+.wall-search { width: 160px; }
+.wall-sizes { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.wall-sizes button { border: 0; border-radius: 0; padding: 5px 9px; font-size: 12px; }
+.wall-sizes button.on { background: var(--accent); color: #fff; }
+.wall-pages { display: inline-flex; align-items: center; gap: 6px; }
+.wall-pages button { padding: 3px 10px; }
+.wall-grid { display: grid; gap: 6px; flex: 1; min-height: 0; }
+.main-wall .stage, .side-wall { overflow: hidden; }
+.wall-grid .feed { display: flex; flex-direction: column; min-height: 0; }
+.wall-grid .feed-video { aspect-ratio: auto; flex: 1; min-height: 0; }
+.wall-grid .feed-video img, .wall-grid .feed-video canvas { object-fit: contain; background: #000; }
+.wall-grid .feed { border-radius: 6px; }
+.wall-grid .feed:hover { border-color: var(--accent); }
+.wall-compact .wall-grid { gap: 6px; }
+.wall-empty { padding: 30px; text-align: center; }
+.wall-title { font-size: 15px; }
+.wall-focus-main { flex: 1; min-height: 0; display: flex; }
+.wall-focus-main .feed { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.wall-focus-main .feed-video { aspect-ratio: auto; flex: 1; min-height: 0; }
+.wall-focus-main .feed-video img, .wall-focus-main .feed-video canvas { object-fit: contain; background: #000; }
+.wall-focus .wall-strip .feed-video { aspect-ratio: 16 / 9; }
+.wall-focus-main .feed { cursor: default; }
+.wall-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.star { background: none; border: 0; padding: 0 2px; color: #ffd166; font-size: 15px; line-height: 1; cursor: pointer; }
+.feed-badge:has(.star:not(.on)) { background: rgba(0, 0, 0, 0.45); }

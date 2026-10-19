@@ -7,6 +7,7 @@ import type { LiveState } from "@/lib/core/live";
 import type { PublicSite, SiteConfig } from "@/lib/core/site";
 import { lastSighting } from "@/lib/tracking/tracker";
 import { CameraFeed } from "./CameraFeed";
+import { CameraWall } from "./CameraWall";
 import { ActiveAlerts, AlertCenter } from "./AlertCenter";
 import { CriticalDetections, DetectionsPanel, needsReview } from "./Detections";
 import { MapEditor } from "./MapEditor";
@@ -40,6 +41,20 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
   const [editing, setEditing] = useState(false);
   const [showBackground, setShowBackground] = useState(true);
   const [badgePath, setBadgePath] = useState<BadgePath | null>(null);
+  /** Main screen: the map, the camera wall, or both side by side. Remembered per browser. */
+  const [view, setView] = useState<"map" | "cameras" | "split">("map");
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("sentinel.view");
+      if (v === "cameras" || v === "split") setView(v);
+    } catch {}
+  }, []);
+  const changeView = (v: "map" | "cameras" | "split") => {
+    setView(v);
+    try {
+      localStorage.setItem("sentinel.view", v);
+    } catch {}
+  };
 
   // Phones get the phone view unless they've chosen the full console.
   useEffect(() => {
@@ -108,6 +123,13 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
             {showBackground ? "Hide background" : "Show background"}
           </button>
         )}
+        {!editing && (
+          <nav className="floors view-switch" title="Main screen">
+            <button className={view === "map" ? "on" : ""} onClick={() => changeView("map")}>Map</button>
+            <button className={view === "cameras" ? "on" : ""} onClick={() => changeView("cameras")}>Cameras</button>
+            <button className={view === "split" ? "on" : ""} onClick={() => changeView("split")}>Split</button>
+          </nav>
+        )}
         <button className={editing ? "btn-primary" : ""} onClick={() => (setEditing((v) => !v), setFollowId(null), setSelection(null))}>
           {editing ? "Editing map…" : "✎ Edit map"}
         </button>
@@ -163,8 +185,21 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
             onDone={() => setEditing(false)}
           />
         </main>
+      ) : view === "cameras" && !following ? (
+        <main className="main main-wall">
+          <section className="stage">
+            <CameraWall
+              state={state}
+              idx={idx}
+              graph={graph}
+              levels={floors}
+              onShowOnMap={(id) => (changeView("map"), select({ kind: "camera", id }))}
+              onTrack={(cameraId) => setModal({ kind: "tag", cameraId })}
+            />
+          </section>
+        </main>
       ) : (
-      <main className="main">
+      <main className={`main${view === "split" && !following ? " main-split" : ""}`}>
         <section className="stage">
           {following ? (
             <FollowView track={following} state={state} idx={idx} graph={graph} floors={floors} color={trackColor(state.tracks, following.id)} onExit={() => setFollowId(null)} />
@@ -196,6 +231,20 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
           )}
         </section>
 
+        {view === "split" && !following ? (
+          <aside className="side side-wall">
+            <CameraWall
+              state={state}
+              idx={idx}
+              graph={graph}
+              levels={floors}
+              compact
+              contextZoneId={contextZone(selection, idx)}
+              onShowOnMap={(id) => select({ kind: "camera", id })}
+              onTrack={(cameraId) => setModal({ kind: "tag", cameraId })}
+            />
+          </aside>
+        ) : (
         <aside className="side">
           {following ? (
             <TrackSide track={following} state={state} idx={idx} graph={graph} floors={floors} color={trackColor(state.tracks, following.id)} />
@@ -213,6 +262,7 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
           </div>
           <EventFeed events={state.events} idx={idx} onLocate={locate} hideDetections={hideDetections} />
         </aside>
+        )}
       </main>
       )}
 
@@ -249,6 +299,15 @@ function Loaded({ site, state, connected }: { site: PublicSite; state: LiveState
       )}
     </div>
   );
+}
+
+/** The room the split view's cameras follow: the selected room, or the room of the selected camera/door. */
+function contextZone(selection: Selection, idx: SiteIndex): string | null {
+  if (!selection) return null;
+  if (selection.kind === "zone") return selection.id;
+  if (selection.kind === "camera") return idx.cameras.get(selection.id)?.covers[0] ?? null;
+  if (selection.kind === "door") return idx.doors.get(selection.id)?.between[1] ?? null;
+  return idx.displays.get(selection.id)?.zoneId ?? null;
 }
 
 /** Map overlay for a person's badge swipes: a trail through the doors they used, in order. */
